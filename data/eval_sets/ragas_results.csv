@@ -1,0 +1,357 @@
+user_input,retrieved_contexts,response,reference,faithfulness,answer_relevancy,context_precision,context_recall
+"Return type vs ORJSONResponse: does generic return type as dict[str, Any] use the Pydantic serializer efficently?","['### `orjson` or Response Model\n\nIf what you are looking for is performance, you are probably better off using a [Response Model](../tutorial/response-model.md) than an `orjson` response.\n\nWith a response model, FastAPI will use Pydantic to serialize the data to JSON, without using intermediate steps, like converting it with `jsonable_encoder`, which would happen in any other case.\n\nAnd under the hood, Pydantic uses the same underlying Rust mechanisms as `orjson` to serialize to JSON, so you will already get the best performance with a response model.', 'Your reading of the code is right. Numbers below are from your exact versions — FastAPI 0.140.7, Pydantic 2.13.4, Python 3.13.\n1 and 2 — intentional, and yes you can rely on generics\nAny return annotation FastAPI can build a TypeAdapter for produces a response field, generics included:\nroute annotation                  response_field  response_class  fast path\n-> (none)                         none            default         False\n-> dict[str, Any]                 yes             default         True\n-> list[dict[str, Any]]           yes             default         True\n-> list[Any]                      yes             default         True\n-> Any                            yes             default         True\n-> MyModel                        yes             default         True\n-> dict[str, Any] + ORJSONResponse yes            ORJSON          False\n-> (none) + ORJSONResponse        none            ORJSON          False\n\nEven bare -> Any gets one. The only ways to end up on the jsonable_encoder branch are to omit the annotation or to return a Response object yourself.\n3 — prefer the return type, and don\'t set both\nThis is the part worth knowing. From fastapi/routing.py in 0.140.7:\n# Use the fast path (dump_json) when no custom response\n# class was set and a response field with a TypeAdapter\n# exists. Serializes directly to JSON bytes via Pydantic\'s\n# Rust core, skipping the intermediate Python dict +\n# json.dumps() step.\nuse_dump_json = response_field is not None and isinstance(\n    response_class, DefaultPlaceholder\n)\nPassing response_class=ORJSONResponse means response_class is no longer a DefaultPlaceholder, so use_dump_json is False — you keep the response field but drop to field.serialize → Python objects → ORJSONResponse.render(). Setting both is the slowest of the three arrangements, not the fastest. (Both ORJSONResponse and UJSONResponse carry @deprecated in fastapi/responses.py, so the warning you hit is real, not advisory folklore.)\n4 — a model is faster than dict[str, Any], and both beat the encoder path badly\nSerialization only, 20,000 iterations, best of 3, 20-key flat dict with one nested value:\n 4.9 us   -> MyModel                        serialize_json  (fast path)\n 6.1 us   -> dict[str, Any]                 serialize_json  (fast path)\n13.3 us   -> dict[str, Any]                 serialize + json.dumps\n48.4 us   no annotation + ORJSONResponse    jsonable_encoder + orjson.dumps\n53.8 us   no annotation                     jsonable_encoder + json.dumps\n 0.8 us   orjson.dumps(payload)             raw, for reference\n\nThe model wins by roughly 25% because Any has no static schema — pydantic-core has to infer each value\'s type at runtime, while a declared model compiles a specialized serializer.\nThe bigger point is the ~8x gap to the encoder rows, and it explains the deprecation: the expensive part was never json.dumps vs orjson.dumps, it was jsonable_encoder walking the object graph in Python. That\'s also why ORJSONResponse only ever bought ~10% here — it optimized the cheap half of the work. Absolute numbers scale with payload size and shape; the ratios held across runs.\n5 — agreed, worth documenting\n""return type or response model"" is accurate but reads as if it means Pydantic models specifically. Two additions would have saved you the source dive: that any return annotation qualifies, dict[str, Any] included, and that setting a custom response_class silently opts you out of the fast path. The second one is the surprising half — it\'s easy to assume the two optimizations stack. Happy to open a docs PR if a maintainer wants it.', '## Custom response class\n\nYou can create your own custom response class, inheriting from `Response` and using it.\n\nFor example, let\'s say that you want to use [`orjson`](https://github.com/ijl/orjson) with some settings.\n\nLet\'s say you want it to return indented and formatted JSON, so you want to use the orjson option `orjson.OPT_INDENT_2`.\n\nYou could create a `CustomORJSONResponse`. The main thing you have to do is create a `Response.render(content)` method that returns the content as `bytes`:\n\n```python\nfrom typing import Any\n\nimport orjson\nfrom fastapi import FastAPI, Response\n\napp = FastAPI()\n\n\nclass CustomORJSONResponse(Response):\n    media_type = ""application/json""\n\n    def render(self, content: Any) -> bytes:\n        assert orjson is not None, ""orjson must be installed""\n        return orjson.dumps(content, option=orjson.OPT_INDENT_2)\n\n\n@app.get(""/"", response_class=CustomORJSONResponse)\nasync def main():\n    return {""message"": ""Hello World""}\n```\n\nNow instead of returning:\n\n```json\n{""message"": ""Hello World""}\n```\n\n...this response will return:\n\n```json\n{\n  ""message"": ""Hello World""\n}\n```\n\nOf course, you will probably find much better ways to take advantage of this than formatting JSON. 😉', ""## Return a `Response`\n\nYou can return a `Response` or any sub-class of it.\n\n*Note*\n\n`JSONResponse` itself is a sub-class of `Response`.\n\nAnd when you return a `Response`, **FastAPI** will pass it directly.\n\nIt won't do any data conversion with Pydantic models, it won't convert the contents to any type, etc.\n\nThis gives you a lot of **flexibility**. You can return any data type, override any data declaration or validation, etc.\n\nIt also gives you a lot of **responsibility**. You have to make sure that the data you return is correct, in the correct format, that it can be serialized, etc."", '## How a Response Model Works\n\nWhen you declare a [Response Model - Return Type](../tutorial/response-model.md) in a path operation, **FastAPI** will use it to serialize the data to JSON, using Pydantic.\n\n```python\nfrom fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI()\n\n\nclass Item(BaseModel):\n    name: str\n    description: str | None = None\n    price: float\n    tax: float | None = None\n    tags: list[str] = []\n\n\n@app.post(""/items/"")\nasync def create_item(item: Item) -> Item:\n    return item\n\n\n@app.get(""/items/"")\nasync def read_items() -> list[Item]:\n    return [\n        Item(name=""Portal Gun"", price=42.0),\n        Item(name=""Plumbus"", price=32.0),\n    ]\n```\n\nAs that will happen on the Rust side, the performance will be much better than if it was done with regular Python and the `JSONResponse` class.\n\nWhen using a `response_model` or return type, FastAPI won\'t use the `jsonable_encoder` to convert the data (which would be slower) nor the `JSONResponse` class.\n\nInstead it takes the JSON bytes generated with Pydantic using the response model (or return type) and returns a `Response` with the right media type for JSON directly (`application/json`).']","Yes, according to the provided context, a generic return type as `dict[str, Any]` will still use the Pydantic serializer efficiently. 
+
+As mentioned in point 1 of the ""Your reading of the code is right"" section:
+
+Any return annotation FastAPI can build a TypeAdapter for produces a response field, generics included: ... -> dict[str, Any]                 yes             default         True
+
+This means that if you use `dict[str, Any]` as your return type, it will indeed use Pydantic's serializer efficiently.","Your reading of the code is right. Numbers below are from your exact versions — FastAPI 0.140.7, Pydantic 2.13.4, Python 3.13.
+1 and 2 — intentional, and yes you can rely on generics
+Any return annotation FastAPI can build a TypeAdapter for produces a response field, generics included:
+route annotation                  response_field  response_class  fast path
+-> (none)                         none            default         False
+-> dict[str, Any]                 yes             default         True
+-> list[dict[str, Any]]           yes             default         True
+-> list[Any]                      yes             default         True
+-> Any                            yes             default         True
+-> MyModel                        yes             default         True
+-> dict[str, Any] + ORJSONResponse yes            ORJSON          False
+-> (none) + ORJSONResponse        none            ORJSON          False
+
+Even bare -> Any gets one. The only ways to end up on the jsonable_encoder branch are to omit the annotation or to return a Response object yourself.
+3 — prefer the return type, and don't set both
+This is the part worth knowing. From fastapi/routing.py in 0.140.7:
+# Use the fast path (dump_json) when no custom response
+# class was set and a response field with a TypeAdapter
+# exists. Serializes directly to JSON bytes via Pydantic's
+# Rust core, skipping the intermediate Python dict +
+# json.dumps() step.
+use_dump_json = response_field is not None and isinstance(
+    response_class, DefaultPlaceholder
+)
+Passing response_class=ORJSONResponse means response_class is no longer a DefaultPlaceholder, so use_dump_json is False — you keep the response field but drop to field.serialize → Python objects → ORJSONResponse.render(). Setting both is the slowest of the three arrangements, not the fastest. (Both ORJSONResponse and UJSONResponse carry @deprecated in fastapi/responses.py, so the warning you hit is real, not advisory folklore.)
+4 — a model is faster than dict[str, Any], and both beat the encoder path badly
+Serialization only, 20,000 iterations, best of 3, 20-key flat dict with one nested value:
+ 4.9 us   -> MyModel                        serialize_json  (fast path)
+ 6.1 us   -> dict[str, Any]                 serialize_json  (fast path)
+13.3 us   -> dict[str, Any]                 serialize + json.dumps
+48.4 us   no annotation + ORJSONResponse    jsonable_encoder + orjson.dumps
+53.8 us   no annotation                     jsonable_encoder + json.dumps
+ 0.8 us   orjson.dumps(payload)             raw, for reference
+
+The model wins by roughly 25% because Any has no static schema — pydantic-core has to infer each value's type at runtime, while a declared model compiles a specialized serializer.
+The bigger point is the ~8x gap to the encoder rows, and it explains the deprecation: the expensive part was never json.dumps vs orjson.dumps, it was jsonable_encoder walking the object graph in Python. That's also why ORJSONResponse only ever bought ~10% here — it optimized the cheap half of the work. Absolute numbers scale with payload size and shape; the ratios held across runs.
+5 — agreed, worth documenting
+""return type or response model"" is accurate but reads as if it means Pydantic models specifically. Two additions would have saved you the source dive: that any return annotation qualifies, dict[str, Any] included, and that setting a custom response_class silently opts you out of the fast path. The second one is the surprising half — it's easy to assume the two optimizations stack. Happy to open a docs PR if a maintainer wants it.",,0.706316156,1,0.526315789
+jsonable_encoder drops exclude_defaults for dict values (propagated for list items),"['## Using the `jsonable_encoder` in a `Response`\n\nBecause **FastAPI** doesn\'t make any changes to a `Response` you return, you have to make sure its contents are ready for it.\n\nFor example, you cannot put a Pydantic model in a `JSONResponse` without first converting it to a `dict` with all the data types (like `datetime`, `UUID`, etc) converted to JSON-compatible types.\n\nFor those cases, you can use the `jsonable_encoder` to convert your data before passing it to a response:\n\n```python\nfrom datetime import datetime\n\nfrom fastapi import FastAPI\nfrom fastapi.encoders import jsonable_encoder\nfrom fastapi.responses import JSONResponse\nfrom pydantic import BaseModel\n\n\nclass Item(BaseModel):\n    title: str\n    timestamp: datetime\n    description: str | None = None\n\n\napp = FastAPI()\n\n\n@app.put(""/items/{id}"")\ndef update_item(id: str, item: Item):\n    json_compatible_item_data = jsonable_encoder(item)\n    return JSONResponse(content=json_compatible_item_data)\n```\n\n*Note: Technical Details*\n\nYou could also use `from starlette.responses import JSONResponse`.\n\n**FastAPI** provides the same `starlette.responses` as `fastapi.responses` just as a convenience for you, the developer. But most of the available responses come directly from Starlette.', ""## JSON Responses\n\nBy default FastAPI returns JSON responses.\n\nIf you declare a [Response Model](../tutorial/response-model.md) FastAPI will use it to serialize the data to JSON, using Pydantic.\n\nIf you don't declare a response model, FastAPI will use the `jsonable_encoder` explained in [JSON Compatible Encoder](../tutorial/encoder.md) and put it in a `JSONResponse`.\n\nIf you declare a `response_class` with a JSON media type (`application/json`), like is the case with the `JSONResponse`, the data you return will be automatically converted (and filtered) with any Pydantic `response_model` that you declared in the *path operation decorator*. But the data won't be serialized to JSON bytes with Pydantic, instead it will be converted with the `jsonable_encoder` and then passed to the `JSONResponse` class, which will serialize it to bytes using the standard JSON library in Python."", '## Exclude from OpenAPI\n\nTo exclude a *path operation* from the generated OpenAPI schema (and thus, from the automatic documentation systems), use the parameter `include_in_schema` and set it to `False`:\n\n```python\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.get(""/items/"", include_in_schema=False)\nasync def read_items():\n    return [{""item_id"": ""Foo""}]\n```', '# JSON with Bytes as Base64\n\nIf your app needs to receive and send JSON data, but you need to include binary data in it, you can encode it as base64.', '### JSON Performance\n\nIn short, if you want the maximum performance, use a [Response Model](../tutorial/response-model.md) and don\'t declare a `response_class` in the *path operation decorator*.\n\n```python\n@app.post(""/items/"")\nasync def create_item(item: Item) -> Item:\n    return item\n```']","I don't know. The provided context does not contain information about the behavior of `jsonable_encoder` regarding `exclude_defaults`. If you're looking for a solution to this specific issue, I recommend checking the documentation or GitHub issues related to FastAPI and Pydantic.","Thanks for your intrest!
+Let's track it in more general existing discussion: #15961",0.333333333,0,0.5,0.333333333
+How to add Custom Error that are properly converted in the OpenAPI schema? (missing `detail` prop in `response`),"['### Custom OpenAPI *path operation* schema\n\nThe dictionary in `openapi_extra` will be deeply merged with the automatically generated OpenAPI schema for the *path operation*.\n\nSo, you could add additional data to the automatically generated schema.\n\nFor example, you could decide to read and validate the request with your own code, without using the automatic features of FastAPI with Pydantic, but you could still want to define the request in the OpenAPI schema.\n\nYou could do that with `openapi_extra`:\n\n```python\nfrom fastapi import FastAPI, Request\n\napp = FastAPI()\n\n\ndef magic_data_reader(raw_body: bytes):\n    return {\n        ""size"": len(raw_body),\n        ""content"": {\n            ""name"": ""Maaaagic"",\n            ""price"": 42,\n            ""description"": ""Just kiddin\', no magic here. ✨"",\n        },\n    }\n\n\n@app.post(\n    ""/items/"",\n    openapi_extra={\n        ""requestBody"": {\n            ""content"": {\n                ""application/json"": {\n                    ""schema"": {\n                        ""required"": [""name"", ""price""],\n                        ""type"": ""object"",\n                        ""properties"": {\n                            ""name"": {""type"": ""string""},\n                            ""price"": {""type"": ""number""},\n                            ""description"": {""type"": ""string""},\n                        },\n                    }\n                }\n            },\n            ""required"": True,\n        },\n    },\n)\nasync def create_item(request: Request):\n    raw_body = await request.body()\n    data = magic_data_reader(raw_body)\n    return data\n```\n\nIn this example, we didn\'t declare any Pydantic model. In fact, the request body is not even <dfn title=""converted from some plain format, like bytes, into Python objects"">parsed</dfn> as JSON, it is read directly as `bytes`, and the function `magic_data_reader()` would be in charge of parsing it in some way.\n\nNevertheless, we can declare the expected schema for the request body.', '## Notes\n\nWhen you return a `Response` directly its data is not validated, converted (serialized), or documented automatically.\n\nBut you can still document it as described in [Additional Responses in OpenAPI](additional-responses.md).\n\nYou can see in later sections how to use/declare these custom `Response`s while still having automatic data conversion, documentation, etc.', ""## OpenAPI and API docs\n\nIf you return additional status codes and responses directly, they won't be included in the OpenAPI schema (the API docs), because FastAPI doesn't have a way to know beforehand what you are going to return.\n\nBut you can document that in your code, using: [Additional Responses](additional-responses.md)."", '# Additional Responses in OpenAPI\n\n*Warning*\n\nThis is a rather advanced topic.\n\nIf you are starting with **FastAPI**, you might not need this.\n\nYou can declare additional responses, with additional status codes, media types, descriptions, etc.\n\nThose additional responses will be included in the OpenAPI schema, so they will also appear in the API docs.\n\nBut for those additional responses you have to make sure you return a `Response` like `JSONResponse` directly, with your status code and content.', '## Exclude from OpenAPI\n\nTo exclude a *path operation* from the generated OpenAPI schema (and thus, from the automatic documentation systems), use the parameter `include_in_schema` and set it to `False`:\n\n```python\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.get(""/items/"", include_in_schema=False)\nasync def read_items():\n    return [{""item_id"": ""Foo""}]\n```']","Unfortunately, I don't know. This is not mentioned in the provided context. However, based on the information about custom responses and including them in the OpenAPI schema, it's likely that you would use a similar approach to declare a custom error response.
+
+Here's an example of how this might be done:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+
+@app.exception_handler(Exception)
+async def http_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={""detail"": ""Internal Server Error""},
+    )
+```
+
+This would add a custom 500 error response to the OpenAPI schema. However, I don't know how to make it work exactly as you described (missing `detail` prop in `response`).","You can make FastAPI return response that follows your schema by adding an exception handler:
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+from pydantic import BaseModel, Field
+
+app = FastAPI()
+
+
+@app.exception_handler(404)
+async def not_found_handler(request, exc: HTTPException):
+    return JSONResponse(
+        status_code=404,
+        content={""code"": exc.detail.get(""code""), ""message"": exc.detail.get(""message"")},
+    )
+
+
+# custom error pydantic model that populate ""detail"" prop of (FastApi) HTTPException
+# NOTE: this is a base class that need to be extended
+class HttpExpectedError(BaseModel):
+    code: str = Field(..., description=""Error code like PLAYLIST_NOT_FOUND"")
+    message: str = Field(..., description=""Error message for human"")
+
+    def toFastApiJson(self):
+        return self.model_dump()
+
+
+# concret error pydantic model for one route (that extends HttpExpectedError)
+class HttpError_PlaylistNotFound(HttpExpectedError):
+    code: Literal[""PLAYLIST_NOT_FOUND""] = ""PLAYLIST_NOT_FOUND""
+
+
+# route
+@app.get(
+    path=""/playlists/{playlist_id}"",
+    responses={404: {""model"": HttpError_PlaylistNotFound}},
+)
+async def getOne(playlist_id: str):
+    playlist = None
+
+    if not playlist:
+        raise HTTPException(
+            status_code=404,
+            detail=HttpError_PlaylistNotFound(
+                message=f""Playlist {playlist_id} not found""
+            ).toFastApiJson(),
+        )
+
+
+def test_404():
+    client = TestClient(app)
+
+    response = client.get(""/playlists/123"")
+    assert response.status_code == 404
+    assert response.json() == {
+        ""code"": ""PLAYLIST_NOT_FOUND"",
+        ""message"": ""Playlist 123 not found"",
+    }
+Or use generic response wrapper to add detail property to the schema in openapi:
+class ErrorResponse(BaseModel, Generic[ErrorT]):
+    detail: ErrorT
+
+
+# route
+@app.get(
+    path=""/playlists/{playlist_id}"",
+    responses={404: {""model"": ErrorResponse[HttpError_PlaylistNotFound]}},
+)
+async def getOne(playlist_id: str):
+    playlist = None
+
+    if not playlist:
+        raise HTTPException(
+            status_code=404,
+            detail=HttpError_PlaylistNotFound(
+                message=f""Playlist {playlist_id} not found""
+            ).toFastApiJson(),
+        )",0.066666667,0,1,0
+"Invalid `contact`/`license_info` URL fails lazily at first /openapi.json request, not at app construction — confusing traceback","['The contact.url only gets validated when the OpenAPI model is built, at OpenAPI(**output) at the end of openapi/utils.py. FastAPI() stores it as a raw dict at construction and builds the schema lazily on the first /openapi.json or /docs hit, then caches it, so nothing else trips over it first.\nWant it to fail at startup? call app.openapi() once right after you construct the app. Same ValidationError on info.contact.url, just where the typo actually is. Checked on 0.115.0, unchanged on master.', '### Check the docs\n\nNow you can start your app and go to [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).\n\nYou will see your docs including a ""Callbacks"" section for your *path operation* that shows how the *external API* should look:\n\n<img src=""/img/tutorial/openapi-callbacks/image01.png"">', '### The callback path expression\n\nThe callback *path* can have an [OpenAPI 3 expression](https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md#key-expression) that can contain parts of the original request sent to *your API*.\n\nIn this case, it\'s the `str`:\n\n```Python\n""{$callback_url}/invoices/{$request.body.id}""\n```\n\nSo, if your API user (the external developer) sends a request to *your API* to:\n\n```\nhttps://yourapi.com/invoices/?callback_url=https://www.external.org/events\n```\n\nwith a JSON body of:\n\n```JSON\n{\n    ""id"": ""2expen51ve"",\n    ""customer"": ""Mr. Richie Rich"",\n    ""total"": ""9999""\n}\n```\n\nthen *your API* will process the invoice, and at some point later, send a callback request to the `callback_url` (the *external API*):\n\n```\nhttps://www.external.org/events/invoices/2expen51ve\n```\n\nwith a JSON body containing something like:\n\n```JSON\n{\n    ""description"": ""Payment celebration"",\n    ""paid"": true\n}\n```\n\nand it would expect a response from that *external API* with a JSON body like:\n\n```JSON\n{\n    ""ok"": true\n}\n```\n\n*Tip*\n\nNotice how the callback URL used contains the URL received as a query parameter in `callback_url` (`https://www.external.org/events`) and also the invoice `id` from inside of the JSON body (`2expen51ve`).', '```JSON hl_lines=""4-8""\n{\n    ""openapi"": ""3.1.0"",\n    // More stuff here\n    ""servers"": [\n        {\n            ""url"": ""/api/v1""\n        }\n    ],\n    ""paths"": {\n            // More stuff here\n    }\n}\n```\n\nIn this example, the ""Proxy"" could be something like **Traefik**. And the server would be something like FastAPI CLI with **Uvicorn**, running your FastAPI application.', '# OpenAPI Callbacks\n\nYou could create an API with a *path operation* that could trigger a request to an *external API* created by someone else (probably the same developer that would be *using* your API).\n\nThe process that happens when your API app calls the *external API* is named a ""callback"". Because the software that the external developer wrote sends a request to your API and then your API *calls back*, sending a request to an *external API* (that was probably created by the same developer).\n\nIn this case, you could want to document how that external API *should* look. What *path operation* it should have, what body it should expect, what response it should return, etc.']","Call `app.openapi()` once right after you construct the app to make it fail at startup. Same `ValidationError` on `info.contact.url`, just where the typo actually is.","The contact.url only gets validated when the OpenAPI model is built, at OpenAPI(**output) at the end of openapi/utils.py. FastAPI() stores it as a raw dict at construction and builds the schema lazily on the first /openapi.json or /docs hit, then caches it, so nothing else trips over it first.
+Want it to fail at startup? call app.openapi() once right after you construct the app. Same ValidationError on info.contact.url, just where the typo actually is. Checked on 0.115.0, unchanged on master.",0.333333333,0.555374148,1,0.75
+"app.frontend() with fallback=""index.html"" returns 404 for client side routes that have a dot in the last path segment (like /users/john.doe or /v/1.2.3)","['### Check the docs\n\nNow you can start your app and go to [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).\n\nYou will see your docs have the normal *path operations* and now also some **webhooks**:\n\n<img src=""/img/tutorial/openapi-webhooks/image01.png"">', '### Check the docs\n\nNow you can start your app and go to [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).\n\nYou will see your docs including a ""Callbacks"" section for your *path operation* that shows how the *external API* should look:\n\n<img src=""/img/tutorial/openapi-callbacks/image01.png"">', '# Additional Status Codes\n\nBy default, **FastAPI** will return the responses using a `JSONResponse`, putting the content you return from your *path operation* inside of that `JSONResponse`.\n\nIt will use the default status code or the one you set in your *path operation*.', '## Proxy with a stripped path prefix\n\nYou could have a proxy that adds a path prefix to your application.\n\nIn these cases you can use `root_path` to configure your application.\n\nThe `root_path` is a mechanism provided by the ASGI specification (that FastAPI is built on, through Starlette).\n\nThe `root_path` is used to handle these specific cases.\n\nAnd it\'s also used internally when mounting sub-applications.\n\nHaving a proxy with a stripped path prefix, in this case, means that you could declare a path at `/app` in your code, but then, you add a layer on top (the proxy) that would put your **FastAPI** application under a path like `/api/v1`.\n\nIn this case, the original path `/app` would actually be served at `/api/v1/app`.\n\nEven though all your code is written assuming there\'s just `/app`.\n\n```python\nfrom fastapi import FastAPI, Request\n\napp = FastAPI()\n\n\n@app.get(""/app"")\ndef read_main(request: Request):\n    return {""message"": ""Hello World"", ""root_path"": request.scope.get(""root_path"")}\n```\n\nAnd the proxy would be **""stripping""** the **path prefix** on the fly before transmitting the request to the app server (probably Uvicorn via FastAPI CLI), keeping your application convinced that it is being served at `/app`, so that you don\'t have to update all your code to include the prefix `/api/v1`.\n\nUp to here, everything would work as normally.\n\nBut then, when you open the integrated docs UI (the frontend), it would expect to get the OpenAPI schema at `/openapi.json`, instead of `/api/v1/openapi.json`.\n\nSo, the frontend (that runs in the browser) would try to reach `/openapi.json` and wouldn\'t be able to get the OpenAPI schema.\n\nBecause we have a proxy with a path prefix of `/api/v1` for our app, the frontend needs to fetch the OpenAPI schema at `/api/v1/openapi.json`.\n\n```mermaid\ngraph LR\n\nbrowser(""Browser"")\nproxy[""Proxy on http://0.0.0.0:9999/api/v1/app""]\nserver[""Server on http://127.0.0.1:8000/app""]\n\nbrowser --> proxy\nproxy --> server\n```\n\n*Tip*\n\nThe IP `0.0.0.0` is commonly used to mean that the program listens on all the IPs available in that machine/server.\n\nThe docs UI would also need the OpenAPI schema to declare that this API `server` is located at `/api/v1` (behind the proxy). For example:', '### `RedirectResponse`\n\nReturns an HTTP redirect. Uses a 307 status code (Temporary Redirect) by default.\n\nYou can return a `RedirectResponse` directly:\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.responses import RedirectResponse\n\napp = FastAPI()\n\n\n@app.get(""/typer"")\nasync def redirect_typer():\n    return RedirectResponse(""https://typer.tiangolo.com"")\n```\n\n---\n\nOr you can use it in the `response_class` parameter:\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.responses import RedirectResponse\n\napp = FastAPI()\n\n\n@app.get(""/fastapi"", response_class=RedirectResponse)\nasync def redirect_fastapi():\n    return ""https://fastapi.tiangolo.com""\n```\n\nIf you do that, then you can return the URL directly from your *path operation* function.\n\nIn this case, the `status_code` used will be the default one for the `RedirectResponse`, which is `307`.\n\n---\n\nYou can also use the `status_code` parameter combined with the `response_class` parameter:\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.responses import RedirectResponse\n\napp = FastAPI()\n\n\n@app.get(""/pydantic"", response_class=RedirectResponse, status_code=302)\nasync def redirect_pydantic():\n    return ""https://docs.pydantic.dev/""\n```']",I don't know.,"Thank you for the clear report!
+Indeed, this should be fixed. I'm tracking it here in this issue for completeness: #16010 , and fix PR here: #16011",0,0,0,0
+Behavioral difference between standard `with`  and `contextmanager_in_threadpool`,"['### Async Context Manager\n\nIf you check, the function is decorated with an `@asynccontextmanager`.\n\nThat converts the function into something called an ""**async context manager**"".\n\n```python\nfrom contextlib import asynccontextmanager\n\nfrom fastapi import FastAPI\n\n\ndef fake_answer_to_everything_ml_model(x: float):\n    return x * 42\n\n\nml_models = {}\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    # Load the ML model\n    ml_models[""answer_to_everything""] = fake_answer_to_everything_ml_model\n    yield\n    # Clean up the ML models and release the resources\n    ml_models.clear()\n\n\napp = FastAPI(lifespan=lifespan)\n\n\n@app.get(""/predict"")\nasync def predict(x: float):\n    result = ml_models[""answer_to_everything""](x)\n    return {""result"": result}\n```\n\nA **context manager** in Python is something that you can use in a `with` statement, for example, `open()` can be used as a context manager:\n\n```Python\nwith open(""file.txt"") as file:\n    file.read()\n```\n\nIn recent versions of Python, there\'s also an **async context manager**. You would use it with `async with`:\n\n```Python\nasync with lifespan(app):\n    await do_stuff()\n```\n\nWhen you create a context manager or an async context manager like above, what it does is that, before entering the `with` block, it will execute the code before the `yield`, and after exiting the `with` block, it will execute the code after the `yield`.\n\nIn our code example above, we don\'t use it directly, but we pass it to FastAPI for it to use it.\n\nThe `lifespan` parameter of the `FastAPI` app takes an **async context manager**, so we can pass our new `lifespan` async context manager to it.\n\n```python\nfrom contextlib import asynccontextmanager\n\nfrom fastapi import FastAPI\n\n\ndef fake_answer_to_everything_ml_model(x: float):\n    return x * 42\n\n\nml_models = {}\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    # Load the ML model\n    ml_models[""answer_to_everything""] = fake_answer_to_everything_ml_model\n    yield\n    # Clean up the ML models and release the resources\n    ml_models.clear()\n\n\napp = FastAPI(lifespan=lifespan)\n\n\n@app.get(""/predict"")\nasync def predict(x: float):\n    result = ml_models[""answer_to_everything""](x)\n    return {""result"": result}\n```', '## Allowing Requests Without Content-Type\n\nIf you need to support clients that don\'t send a `Content-Type` header, you can disable strict checking by setting `strict_content_type=False`:\n\n```python\nfrom fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI(strict_content_type=False)\n\n\nclass Item(BaseModel):\n    name: str\n    price: float\n\n\n@app.post(""/items/"")\nasync def create_item(item: Item):\n    return item\n```\n\nWith this setting, requests without a `Content-Type` header will have their body parsed as JSON, which is the same behavior as older versions of FastAPI.\n\n*Note*\n\nThis behavior and configuration was added in FastAPI 0.132.0.', '## `HTTPSRedirectMiddleware`\n\nEnforces that all incoming requests must either be `https` or `wss`.\n\nAny incoming request to `http` or `ws` will be redirected to the secure scheme instead.\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware\n\napp = FastAPI()\n\napp.add_middleware(HTTPSRedirectMiddleware)\n\n\n@app.get(""/"")\nasync def main():\n    return {""message"": ""Hello World""}\n```', '# Strict Content-Type Checking\n\nBy default, **FastAPI** uses strict `Content-Type` header checking for JSON request bodies, this means that JSON requests **must** include a valid `Content-Type` header (e.g. `application/json`) in order for the body to be parsed as JSON.', '## Parameterize the instance\n\nAnd now, we can use `__init__` to declare the parameters of the instance that we can use to ""parameterize"" the dependency:\n\n```python\nfrom typing import Annotated\n\nfrom fastapi import Depends, FastAPI\n\napp = FastAPI()\n\n\nclass FixedContentQueryChecker:\n    def __init__(self, fixed_content: str):\n        self.fixed_content = fixed_content\n\n    def __call__(self, q: str = """"):\n        if q:\n            return self.fixed_content in q\n        return False\n\n\nchecker = FixedContentQueryChecker(""bar"")\n\n\n@app.get(""/query-checker/"")\nasync def read_query_check(fixed_content_included: Annotated[bool, Depends(checker)]):\n    return {""fixed_content_in_query"": fixed_content_included}\n```\n\nIn this case, **FastAPI** won\'t ever touch or care about `__init__`, we will use it directly in our code.']",I don't know. The provided context does not contain any information about the behavioral differences between a standard `with` statement and the `@contextmanager_in_threadpool` decorator or how to use it.,"Thanks for confirming this Sergei @yudin-s, and for the fix. Moving __enter__ out of the try fixes the first issue cleanly (and it also stops __exit__ swallowing the __enter__ exception when it returned True, which the old except block used to do).
+I kept digging and found two more deviations from PEP 343 that the fix alone does not cover.
+2. except Exception skips BaseException
+The guard catches Exception but not BaseException. So KeyboardInterrupt, SystemExit, and asyncio.CancelledError raised in the body never reach __exit__. A standard with calls __exit__ for all of these:
+class T:
+    def __enter__(self): return self
+    def __exit__(self, *a):
+        print(""exit called"", a[0])
+        return False
+
+try:
+    with T():
+        raise KeyboardInterrupt()
+except KeyboardInterrupt:
+    pass
+# standard with: exit runs, receives KeyboardInterrupt
+# contextmanager_in_threadpool: exit never runs
+So the guard needs to be except BaseException.
+3. Real anyio cancellation never reaches __exit__
+This one is sneakier. Even with except BaseException, a real task cancellation (via cancel_scope.cancel()) still does not run __exit__. The await anyio.to_thread.run_sync(...) call is itself a checkpoint: anyio sees the scope is still cancelled and re-raises CancelledError before the worker thread starts.
+I confirmed this by canceling a task group child parked inside the context:
+async with anyio.create_task_group() as tg:
+    async def child():
+        async with contextmanager_in_threadpool(cm):
+            await anyio.sleep(10)
+    tg.start_soon(child)
+    await anyio.sleep(0.1)
+    tg.cancel_scope.cancel()
+# cm.exit_called == False
+That is the worst case for cleanup: cancellation is exactly when you want __exit__ to run, and it is exactly when it gets skipped.
+4. The else (normal exit) branch has the same hole
+The else branch runs __exit__(None, None, None) after a body that completed without raising. Its await anyio.to_thread.run_sync(...) is a checkpoint too. If a cancel lands in the window between a checkpoint-free body returning and that await, __exit__ is skipped while __enter__ already ran - a straight resource leak. Reproducible:
+async with anyio.create_task_group() as tg:
+    async def child():
+        async with contextmanager_in_threadpool(cm):
+            entered.set()   # body has no other await
+    tg.start_soon(child)
+    await entered.wait()
+    tg.cancel_scope.cancel()
+# without a shield on the else branch: cm.exit_called == False
+# enter ran, exit did not
+That window is narrow, but it is real. For a cleanup callback it should not exist at all.
+Fix: shield every __exit__ thread call
+exit_limiter = CapacityLimiter(1)
+value = await run_in_threadpool(cm.__enter__)
+try:
+    yield value
+except BaseException as e:
+    with anyio.CancelScope(shield=True):
+        ok = bool(
+            await anyio.to_thread.run_sync(
+                cm.__exit__, type(e), e, e.__traceback__, limiter=exit_limiter
+            )
+        )
+    if not ok:
+        raise
+else:
+    with anyio.CancelScope(shield=True):
+        await anyio.to_thread.run_sync(
+            cm.__exit__, None, None, None, limiter=exit_limiter
+        )
+Both __exit__ calls are now shielded. The mental model is simple: once __enter__ has run, __exit__ always runs to completion, cancellation or not. This mirrors what a synchronous with already does: __exit__ is a sync call, you cannot cancel it mid-flight.
+Here are the tests that pin each of the cases above, so it is not just a claim. All run on both asyncio and trio (@pytest.mark.anyio), so the asyncio and trio variants are separate test items.
+class EnterFailsCM:
+    def __init__(self, exit_return: bool | None = False) -> None:
+        self.exit_called = False
+        self.exit_return = exit_return
+
+    def __enter__(self) -> str:
+        raise ValueError(""setup failed"")
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool | None:
+        self.exit_called = True
+        return self.exit_return
+
+
+@pytest.mark.anyio
+async def test_enter_failure_does_not_call_exit() -> None:
+    cm = EnterFailsCM()
+    with pytest.raises(ValueError, match=""setup failed""):
+        async with contextmanager_in_threadpool(cm):
+            pass
+    assert not cm.exit_called
+
+
+@pytest.mark.anyio
+async def test_enter_failure_propagates_even_if_exit_would_suppress() -> None:
+    # old code: __exit__(True) would swallow the __enter__ ValueError
+    cm = EnterFailsCM(exit_return=True)
+    with pytest.raises(ValueError, match=""setup failed""):
+        async with contextmanager_in_threadpool(cm):
+            pass
+    assert not cm.exit_called
+
+
+class ExitTrackingCM:
+    def __init__(self) -> None:
+        self.exit_called = False
+        self.exit_args: tuple = ()
+
+    def __enter__(self) -> str:
+        return ""value""
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.exit_called = True
+        self.exit_args = (exc_type, exc_val, exc_tb)
+        return False
+
+
+@pytest.mark.anyio
+async def test_keyboard_interrupt_in_body_calls_exit() -> None:
+    cm = ExitTrackingCM()
+    with pytest.raises(KeyboardInterrupt, match=""boom""):
+        async with contextmanager_in_threadpool(cm):
+            raise KeyboardInterrupt(""boom"")
+    assert cm.exit_called
+    assert cm.exit_args[0] is KeyboardInterrupt
+
+
+# SystemExit and manual asyncio.CancelledError are covered by two more tests
+# of the same shape (test_system_exit_in_body_calls_exit,
+# test_cancelled_error_in_body_calls_exit).
+
+
+class SlowExitTrackingCM:
+    def __init__(self) -> None:
+        self.exit_called = False
+
+    def __enter__(self) -> str:
+        return ""value""
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.exit_called = True
+        return False
+
+
+@pytest.mark.anyio
+async def test_real_cancellation_still_calls_exit() -> None:
+    import anyio
+
+    cm = SlowExitTrackingCM()
+
+    async with anyio.create_task_group() as tg:
+        async def child() -> None:
+            async with contextmanager_in_threadpool(cm):
+                await anyio.sleep(10)
+
+        tg.start_soon(child)
+        await anyio.sleep(0.1)
+        tg.cancel_scope.cancel()
+
+    assert cm.exit_called
+
+
+@pytest.mark.anyio
+async def test_cancellation_after_normal_body_still_calls_exit() -> None:
+    import anyio
+
+    cm = SlowExitTrackingCM()
+    entered = anyio.Event()
+
+    async with anyio.create_task_group() as tg:
+        async def child() -> None:
+            async with contextmanager_in_threadpool(cm):
+                entered.set()
+
+        tg.start_soon(child)
+        await entered.wait()
+        tg.cancel_scope.cancel()
+
+    assert cm.exit_called
+The last test is the one that made me add the shield on the else branch too: without it, assert cm.exit_called fails on the asyncio backend (enter ran, exit did not). With the shield, it passes on both backends.
+I have a full set of tests covering these cases locally. An earlier version went up as a PR but got closed/rejected, so I reworked it: the enter-out-of-try, the BaseException guard, and the shields on both branches are all pinned by tests now, on both asyncio and trio.
+One tradeoff to flag: if __exit__ blocks (rollback to a dead DB), cancellation cannot interrupt it until __exit__ returns. That is the same constraint as a plain with, but it is worth being explicit about it.",0.333333333,0,1,
+Feat: HTMLResponse should support `__html__` conversion of content,"['### `HTMLResponse`\n\nTakes some text or bytes and returns an HTML response, as you read above.', 'HTMLResponse is defined in Starlette, not FastAPI, so the __html__ support would need to live there. FastAPI\'s HTMLResponse is just a re-export of starlette.responses.HTMLResponse.\nThe current implementation passes content directly to the Response body, which calls .encode() and expects a string or bytes. There is no protocol hook for arbitrary objects.\nFor now the explicit workaround is to call __html__ yourself at the call site:\n@app.get(""/"")\ndef root():\n    return HTMLResponse(CustomHTML().__html__())\nIf you want to avoid spelling that out on every route, a thin subclass works:\nfrom fastapi.responses import HTMLResponse\n\nclass SmartHTMLResponse(HTMLResponse):\n    def __init__(self, content=None, **kwargs):\n        if content is not None and not isinstance(content, (str, bytes)) and hasattr(content, ""__html__""):\n            content = content.__html__()\n        super().__init__(content=content, **kwargs)\nUse SmartHTMLResponse as your response_class and it transparently handles objects that implement __html__.\nFor upstreaming the feature, I would open the discussion or PR in the Starlette repo rather than FastAPI. The __html__ protocol is well established in the Python web ecosystem (Jinja2, MarkupSafe, Django\'s mark_safe) so it has a reasonable case for first-class support, but the change belongs in Starlette\'s Response.__init__ where the content encoding actually happens.', '## HTML Response\n\nTo return a response with HTML directly from **FastAPI**, use `HTMLResponse`.\n\n* Import `HTMLResponse`.\n* Pass `HTMLResponse` as the parameter `response_class` of your *path operation decorator*.\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.responses import HTMLResponse\n\napp = FastAPI()\n\n\n@app.get(""/items/"", response_class=HTMLResponse)\nasync def read_items():\n    return """"""\n    <html>\n        <head>\n            <title>Some HTML in here</title>\n        </head>\n        <body>\n            <h1>Look ma! HTML!</h1>\n        </body>\n    </html>\n    """"""\n```\n\n*Note*\n\nThe parameter `response_class` will also be used to define the ""media type"" of the response.\n\nIn this case, the HTTP header `Content-Type` will be set to `text/html`.\n\nAnd it will be documented as such in OpenAPI.', '### Return a `Response`\n\nAs seen in [Return a Response directly](response-directly.md), you can also override the response directly in your *path operation*, by returning it.\n\nThe same example from above, returning an `HTMLResponse`, could look like:\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.responses import HTMLResponse\n\napp = FastAPI()\n\n\n@app.get(""/items/"")\nasync def read_items():\n    html_content = """"""\n    <html>\n        <head>\n            <title>Some HTML in here</title>\n        </head>\n        <body>\n            <h1>Look ma! HTML!</h1>\n        </body>\n    </html>\n    """"""\n    return HTMLResponse(content=html_content, status_code=200)\n```\n\n*Warning*\n\nA `Response` returned directly by your *path operation function* won\'t be documented in OpenAPI (for example, the `Content-Type` won\'t be documented) and won\'t be visible in the automatic interactive docs.\n\n*Note*\n\nOf course, the actual `Content-Type` header, status code, etc, will come from the `Response` object you returned.', '## Available responses\n\nHere are some of the available responses.\n\nKeep in mind that you can use `Response` to return anything else, or even create a custom sub-class.\n\n*Note: Technical Details*\n\nYou could also use `from starlette.responses import HTMLResponse`.\n\n**FastAPI** provides the same `starlette.responses` as `fastapi.responses` just as a convenience for you, the developer. But most of the available responses come directly from Starlette.']","You don't know. 
+
+However, according to the provided context, there's an existing workaround called SmartHTMLResponse which subclasses HTMLResponse and supports objects with a __html__ method:
+
+```python
+class SmartHTMLResponse(HTMLResponse):
+    def __init__(self, content=None, **kwargs):
+        if content is not None and not isinstance(content, (str, bytes)) and hasattr(content, ""__html__""):
+            content = content.__html__()
+        super().__init__(content=content, **kwargs)
+```","HTMLResponse is defined in Starlette, not FastAPI, so the __html__ support would need to live there. FastAPI's HTMLResponse is just a re-export of starlette.responses.HTMLResponse.
+The current implementation passes content directly to the Response body, which calls .encode() and expects a string or bytes. There is no protocol hook for arbitrary objects.
+For now the explicit workaround is to call __html__ yourself at the call site:
+@app.get(""/"")
+def root():
+    return HTMLResponse(CustomHTML().__html__())
+If you want to avoid spelling that out on every route, a thin subclass works:
+from fastapi.responses import HTMLResponse
+
+class SmartHTMLResponse(HTMLResponse):
+    def __init__(self, content=None, **kwargs):
+        if content is not None and not isinstance(content, (str, bytes)) and hasattr(content, ""__html__""):
+            content = content.__html__()
+        super().__init__(content=content, **kwargs)
+Use SmartHTMLResponse as your response_class and it transparently handles objects that implement __html__.
+For upstreaming the feature, I would open the discussion or PR in the Starlette repo rather than FastAPI. The __html__ protocol is well established in the Python web ecosystem (Jinja2, MarkupSafe, Django's mark_safe) so it has a reasonable case for first-class support, but the change belongs in Starlette's Response.__init__ where the content encoding actually happens.",1,0.630046645,1,0.636363636
+Router-tree lazy rebuild (0.137.0+) is not thread-safe: valid routes can 404 under concurrent first requests,"[""This is quite an interesting edge case! Thanks for the report.\nIt should solved here: #16013\nThe issue should be mostly harmless, as it would mainly apply in threaded parallel test runs (rare). But still, I thought it would be worth solving.\nFor the warnings, it's also pretty much harmless and that will be refactored either way so it should be fine. It is now released as 0.139.2 🎉"", '## `TrustedHostMiddleware`\n\nEnforces that all incoming requests have a correctly set `Host` header, in order to guard against HTTP Host Header attacks.\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.middleware.trustedhost import TrustedHostMiddleware\n\napp = FastAPI()\n\napp.add_middleware(\n    TrustedHostMiddleware, allowed_hosts=[""example.com"", ""*.example.com""]\n)\n\n\n@app.get(""/"")\nasync def main():\n    return {""message"": ""Hello World""}\n```\n\nThe following arguments are supported:\n\n* `allowed_hosts` - A list of domain names that should be allowed as hostnames. Wildcard domains such as `*.example.com` are supported for matching subdomains. To allow any hostname either use `allowed_hosts=[""*""]` or omit the middleware.\n* `www_redirect` - If set to True, requests to non-www versions of the allowed hosts will be redirected to their www counterparts. Defaults to `True`.\n\nIf an incoming request does not validate correctly then a `400` response will be sent.', '## `HTTPSRedirectMiddleware`\n\nEnforces that all incoming requests must either be `https` or `wss`.\n\nAny incoming request to `http` or `ws` will be redirected to the secure scheme instead.\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware\n\napp = FastAPI()\n\napp.add_middleware(HTTPSRedirectMiddleware)\n\n\n@app.get(""/"")\nasync def main():\n    return {""message"": ""Hello World""}\n```', '## Testing locally with Traefik\n\nYou can easily run the experiment locally with a stripped path prefix using [Traefik](https://docs.traefik.io/).\n\n[Download Traefik](https://github.com/traefik/traefik/releases), it\'s a single binary, you can extract the compressed file and run it directly from the terminal.\n\nThen create a file `traefik.toml` with:\n\n```TOML hl_lines=""3""\n[entryPoints]\n  [entryPoints.http]\n    address = "":9999""\n\n[providers]\n  [providers.file]\n    filename = ""routes.toml""\n```\n\nThis tells Traefik to listen on port 9999 and to use another file `routes.toml`.\n\n*Tip*\n\nWe are using port 9999 instead of the standard HTTP port 80 so that you don\'t have to run it with admin (`sudo`) privileges.\n\nNow create that other file `routes.toml`:\n\n```TOML hl_lines=""5  12  20""\n[http]\n  [http.middlewares]\n\n    [http.middlewares.api-stripprefix.stripPrefix]\n      prefixes = [""/api/v1""]\n\n  [http.routers]\n\n    [http.routers.app-http]\n      entryPoints = [""http""]\n      service = ""app""\n      rule = ""PathPrefix(`/api/v1`)""\n      middlewares = [""api-stripprefix""]\n\n  [http.services]\n\n    [http.services.app]\n      [http.services.app.loadBalancer]\n        [[http.services.app.loadBalancer.servers]]\n          url = ""http://127.0.0.1:8000""\n```\n\nThis file configures Traefik to use the path prefix `/api/v1`.\n\nAnd then Traefik will redirect its requests to your Uvicorn running on `http://127.0.0.1:8000`.\n\nNow start Traefik:\n\n```console\n$ ./traefik --configFile=traefik.toml\n\nINFO[0000] Configuration loaded from file: /home/user/awesomeapi/traefik.toml\n```\n\nAnd now start your app, using the `--root-path` option:\n\n```console\n$ uv run fastapi run main.py --forwarded-allow-ips=""*"" --root-path /api/v1\n\nINFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n```', ""## About proxies with a stripped path prefix\n\nKeep in mind that a proxy with stripped path prefix is only one of the ways to configure it.\n\nProbably in many cases the default will be that the proxy doesn't have a stripped path prefix.\n\nIn a case like that (without a stripped path prefix), the proxy would listen on something like `https://myawesomeapp.com`, and then if the browser goes to `https://myawesomeapp.com/api/v1/app` and your server (e.g. Uvicorn) listens on `http://127.0.0.1:8000` the proxy (without a stripped path prefix) would access Uvicorn at the same path: `http://127.0.0.1:8000/api/v1/app`.""]",I don't know. The provided context does not contain information about the issue with router-tree lazy rebuild in FastAPI being non-thread-safe.,"This is quite an interesting edge case! Thanks for the report.
+It should solved here: #16013
+The issue should be mostly harmless, as it would mainly apply in threaded parallel test runs (rare). But still, I thought it would be worth solving.
+For the warnings, it's also pretty much harmless and that will be refactored either way so it should be fine. It is now released as 0.139.2 🎉",0,0,0,0.4
+,,,,,,,
+,,,,,,,
+"{'faithfulness': 0.2952, 'answer_relevancy': 0.2365, 'context_precision': 0.6875, 'context_recall': 0.3780}",,,,,,,
