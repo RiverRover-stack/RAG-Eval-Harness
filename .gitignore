@@ -14,3 +14,9 @@ data/processed/*
 .coverage
 htmlcov/
 .DS_Store
+
+# Run artifacts: everything is gitignored except explicit promotions.
+runs/*
+!runs/_pinned/
+!runs/leaderboard.json
+!runs/baseline.json

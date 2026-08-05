@@ -9,7 +9,6 @@ Usage:
     uv run python -m rag_eval.eval.build_eval_set
 """
 
-import json
 
 from rag_eval.common.config import settings
 from rag_eval.common.schemas import DiscussionQA, EvalExample
@@ -29,8 +28,7 @@ def build_and_save(max_pages: int | None = None) -> str:
     examples = [qa_to_eval_example(qa) for qa in qas]
 
     with open(settings.eval_set_path, "w", encoding='utf-8') as f:
-        for ex in examples:
-            f.write(ex.model_dump_json() + "\n")
+        f.writelines(ex.model_dump_json() + "\n" for ex in examples)
 
     return settings.eval_set_path
 

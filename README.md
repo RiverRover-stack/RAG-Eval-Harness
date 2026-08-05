@@ -23,7 +23,7 @@ src/rag_eval/
 data/
   raw/               unprocessed pulls from GitHub (gitignored)
   processed/         chroma persistence dir (gitignored)
-  eval_sets/         eval set JSONL + ragas results (kept, contents gitignored)
+  eval_sets/         eval set JSONL + ragas results (tracked in git)
 tests/
   unit/              fast, no external services
   integration/        hits the FastAPI app / real services
@@ -39,14 +39,14 @@ cp .env.example .env   # then fill in GITHUB_TOKEN
 ```
 
 Requires a local Ollama server running with the models named in `.env`
-(`ollama pull llama3.1 && ollama pull nomic-embed-text`, or swap in whichever
+(`ollama pull fdm-llama && ollama pull nomic-embed-text`, or swap in whichever
 models you prefer).
 
 ## Workflow
 
 1. **Build the index** — pull Discussions, chunk, embed, upsert into Chroma:
    ```bash
-   uv run python -m rag_eval.ingestion.
+   uv run python -m rag_eval.ingestion.embed_and_store
    ```
 2. **Build the eval set** — separate from the index; ground truth comes
    straight from the accepted Discussion answers:

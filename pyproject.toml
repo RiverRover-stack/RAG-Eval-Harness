@@ -47,7 +47,12 @@ target-version = "py311"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "slow: not run by default; determinism/long-running checks",
+    "integration: hits the FastAPI app or a real service",
+    "llm: calls a real LLM API; costs quota/money",
+]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 ignore_missing_imports = true

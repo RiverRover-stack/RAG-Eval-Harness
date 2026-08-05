@@ -352,6 +352,3 @@ Router-tree lazy rebuild (0.137.0+) is not thread-safe: valid routes can 404 und
 It should solved here: #16013
 The issue should be mostly harmless, as it would mainly apply in threaded parallel test runs (rare). But still, I thought it would be worth solving.
 For the warnings, it's also pretty much harmless and that will be refactored either way so it should be fine. It is now released as 0.139.2 🎉",0,0,0,0.4
-,,,,,,,
-,,,,,,,
-"{'faithfulness': 0.2952, 'answer_relevancy': 0.2365, 'context_precision': 0.6875, 'context_recall': 0.3780}",,,,,,,

@@ -17,7 +17,11 @@ def get_collection(collection_name: str):
     )
     return client.get_or_create_collection(
         name=collection_name,
-        embedding_function=embed_fn,
+        # chromadb's EmbeddingFunction protocol and its own OllamaEmbeddingFunction
+        # stub disagree on the accepted input type; a real mismatch in chromadb's
+        # stubs, not ours. Resolved in Phase 2, which stops using Chroma's built-in
+        # embedding functions entirely (embeddings computed and passed explicitly).
+        embedding_function=embed_fn,  # type: ignore[arg-type]
         metadata={"hnsw:space": "cosine"},
     )
 

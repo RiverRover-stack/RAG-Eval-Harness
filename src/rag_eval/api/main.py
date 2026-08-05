@@ -1,4 +1,4 @@
-"""FastAPI app exposing the RAG pipeline for ad-hoc querying and eval triggers."""
+"""FastAPI app exposing the RAG pipeline for ad-hoc querying."""
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel

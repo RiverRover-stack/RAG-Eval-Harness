@@ -4,11 +4,11 @@ Keep this simple to start: one chunk per answer body, with the question
 title carried as metadata for citation. Swap in a token-aware splitter
 later if answers turn out to be long.
 
-Metadata shape here is kept consistent with the docs chunker (docs_chunker.py,
-once it exists), so both sources can share one Chroma collection and be
-filtered/reported on by `source_type`. See project notes on the chunk
-metadata schema: source_type, title, url, content_hash are common to every
-chunk regardless of source; section/path/chunk_index are docs-only.
+Metadata shape here is kept consistent with the docs chunker (docs_chunker.py),
+so both sources can share one Chroma collection and be filtered/reported on by
+`source_type`. See project notes on the chunk metadata schema: source_type,
+title, url, content_hash are common to every chunk regardless of source;
+section/path/chunk_index are docs-only.
 """
 
 import hashlib

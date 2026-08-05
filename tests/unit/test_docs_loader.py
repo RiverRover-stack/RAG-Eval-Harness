@@ -14,7 +14,6 @@ from rag_eval.ingestion.docs_loader import (
     strip_termy_tags,
 )
 
-
 # ---------------------------------------------------------------------------
 # iter_raw_docs
 # ---------------------------------------------------------------------------
@@ -30,7 +29,7 @@ def test_iter_raw_docs_yields_relative_paths_and_text(tmp_path: Path):
 
     paths = [p.as_posix() for p, _ in results]
     assert paths == ["index.md", "tutorial/first-steps.md"]
-    texts = dict((p.as_posix(), t) for p, t in results)
+    texts = {p.as_posix(): t for p, t in results}
     assert texts["index.md"] == "# Home"
 
 

@@ -7,8 +7,8 @@ from rag_eval.common.schemas import RetrievedChunk
 
 SYSTEM_PROMPT = (
     "You answer FastAPI questions using only the provided context, which is "
-    "drawn from GitHub Discussions. If the context does not contain the answer, "
-    "say you don't know rather than guessing."
+    "drawn from the FastAPI docs and GitHub Discussions. If the context does "
+    "not contain the answer, say you don't know rather than guessing."
 )
 
 

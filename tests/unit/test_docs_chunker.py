@@ -6,7 +6,6 @@ import pytest
 from rag_eval.ingestion.docs_chunker import (
     CHARS_PER_TOKEN,
     TARGET_MAX_TOKENS,
-    TARGET_MIN_TOKENS,
     _assign_anchors,
     _atomic_blocks,
     _doc_url,

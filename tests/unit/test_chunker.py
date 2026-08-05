@@ -24,13 +24,13 @@ def test_qa_to_chunks_produces_one_chunk_with_metadata():
 
 
 def test_qa_to_chunks_content_hash_changes_with_answer_text():
-    base = dict(
-        discussion_id="D_1",
-        title="How do I use Depends?",
-        question_body="I'm confused about Depends()",
-        url="https://github.com/fastapi/fastapi/discussions/1",
-        category="Q&A",
-    )
+    base = {
+        "discussion_id": "D_1",
+        "title": "How do I use Depends?",
+        "question_body": "I'm confused about Depends()",
+        "url": "https://github.com/fastapi/fastapi/discussions/1",
+        "category": "Q&A",
+    }
     qa_a = DiscussionQA(**base, answer_body="Depends() lets you declare a dependency...")
     qa_b = DiscussionQA(**base, answer_body="Different answer text entirely.")
 
