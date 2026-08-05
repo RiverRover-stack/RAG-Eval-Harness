@@ -31,14 +31,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DOCS_DIR = Path("data/raw/docs")
-DOCS_SRC_DIR = Path("data/raw/docs_src")
+DOCS_DIR = Path("data/corpus/docs")
+DOCS_SRC_DIR = Path("data/corpus/docs_src")
 
 
 # ---------------------------------------------------------------------------
 # Raw loading
 # ---------------------------------------------------------------------------
-EXCLUDED_DOCS = {"release-notes.md"}
+# _llm-test.md is a test fixture page in the FastAPI repo, not real docs
+# content -- it was being embedded and retrieved before this exclusion.
+EXCLUDED_DOCS = {"release-notes.md", "_llm-test.md"}
 
 def iter_raw_docs(
     docs_dir: Path = DOCS_DIR, limit: int | None = None

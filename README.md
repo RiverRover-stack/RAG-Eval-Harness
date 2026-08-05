@@ -21,7 +21,8 @@ src/rag_eval/
   api/               FastAPI app
   common/            settings, shared pydantic schemas
 data/
-  raw/               unprocessed pulls from GitHub (gitignored)
+  corpus/            pinned FastAPI docs snapshot + discussions snapshot (tracked in git)
+  raw/               unused now that corpus/ is pinned (gitignored)
   processed/         chroma persistence dir (gitignored)
   eval_sets/         eval set JSONL + ragas results (tracked in git)
 tests/
@@ -44,12 +45,19 @@ models you prefer).
 
 ## Workflow
 
-1. **Build the index** — pull Discussions, chunk, embed, upsert into Chroma:
+0. **Pin the corpus** — one-time (or explicit refresh) fetch of the docs
+   snapshot and the discussions snapshot; both are committed, so everyone
+   indexes the same corpus:
+   ```bash
+   uv run python scripts/fetch_corpus.py
+   uv run python -m rag_eval.ingestion.discussions_snapshot --max-pages 6
+   ```
+1. **Build the index** — chunk both snapshots, embed, upsert into Chroma:
    ```bash
    uv run python -m rag_eval.ingestion.embed_and_store
    ```
 2. **Build the eval set** — separate from the index; ground truth comes
-   straight from the accepted Discussion answers:
+   straight from the accepted Discussion answers in the pinned snapshot:
    ```bash
    uv run python -m rag_eval.eval.build_eval_set
    ```
@@ -70,10 +78,7 @@ uv run pytest
 
 ## Open decisions / TODO
 
-- Chunking is currently one chunk per answer; revisit if answers are long or
-  code-heavy.
 - RAGAS is using the same local Ollama model as both generator and judge —
   fine for iterating, but judge/generator overlap can inflate scores. Consider
   a stronger separate judge model before trusting absolute numbers.
-- No retry/backoff on the GitHub GraphQL client yet; add if rate limits bite.
-- `configs/` and `scripts/` are scaffolded but empty — fill in as needed.
+- `configs/` is scaffolded but empty — fill in as needed (Phase 4).

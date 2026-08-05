@@ -1,16 +1,23 @@
 from rag_eval.common.schemas import DiscussionQA
 from rag_eval.ingestion.chunker import qa_to_chunks
+from rag_eval.ingestion.packing import CHARS_PER_TOKEN, TARGET_MAX_TOKENS
+
+
+def _base_qa(**overrides) -> DiscussionQA:
+    base = {
+        "discussion_id": "D_1",
+        "title": "How do I use Depends?",
+        "question_body": "I'm confused about Depends()",
+        "answer_body": "Depends() lets you declare a dependency...",
+        "url": "https://github.com/fastapi/fastapi/discussions/1",
+        "category": "Q&A",
+    }
+    base.update(overrides)
+    return DiscussionQA(**base)
 
 
 def test_qa_to_chunks_produces_one_chunk_with_metadata():
-    qa = DiscussionQA(
-        discussion_id="D_1",
-        title="How do I use Depends?",
-        question_body="I'm confused about Depends()",
-        answer_body="Depends() lets you declare a dependency...",
-        url="https://github.com/fastapi/fastapi/discussions/1",
-        category="Q&A",
-    )
+    qa = _base_qa()
 
     chunks = qa_to_chunks(qa)
 
@@ -21,6 +28,25 @@ def test_qa_to_chunks_produces_one_chunk_with_metadata():
     assert chunks[0]["metadata"]["url"] == qa.url
     assert chunks[0]["metadata"]["source_type"] == "discussion"
     assert chunks[0]["metadata"]["content_hash"]
+    assert chunks[0]["metadata"]["chunk_index"] == 0
+    assert chunks[0]["metadata"]["parent_id"]
+
+
+def test_qa_to_chunks_packs_a_long_answer_into_multiple_chunks():
+    # Well past TARGET_MAX_TOKENS, with blank-line-separated paragraphs so
+    # the packer has more than one atomic block to work with.
+    long_answer = "\n\n".join(
+        "a" * (100 * CHARS_PER_TOKEN) for _ in range(2 * TARGET_MAX_TOKENS // 100)
+    )
+    qa = _base_qa(answer_body=long_answer)
+
+    chunks = qa_to_chunks(qa)
+
+    assert len(chunks) > 1
+    assert [c["id"] for c in chunks] == [f"D_1::{i}" for i in range(len(chunks))]
+    assert [c["metadata"]["chunk_index"] for c in chunks] == list(range(len(chunks)))
+    # every chunk from the same answer shares one parent_id
+    assert len({c["metadata"]["parent_id"] for c in chunks}) == 1
 
 
 def test_qa_to_chunks_content_hash_changes_with_answer_text():

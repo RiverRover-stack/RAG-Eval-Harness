@@ -22,6 +22,8 @@ EXPECTED_METADATA_KEYS_BY_SOURCE = {
         "question",
         "url",
         "category",
+        "chunk_index",
+        "parent_id",
         "content_hash",
     },
     "docs": {
@@ -31,6 +33,7 @@ EXPECTED_METADATA_KEYS_BY_SOURCE = {
         "path",
         "url",
         "chunk_index",
+        "parent_id",
         "content_hash",
     },
 }

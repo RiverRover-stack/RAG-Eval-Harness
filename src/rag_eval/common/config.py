@@ -19,12 +19,6 @@ class Settings(BaseSettings):
     ollama_llm_model: str = "fdm-llama"
     ollama_embed_model: str = "nomic-embed-text"
 
-    # Ingestion scope: caps on how much of each source gets indexed, so a
-    # full ingest + eval pass stays fast and the retrieval corpus stays
-    # small enough for a clean local run. 0 / None = no cap (full corpus).
-    ingest_docs_limit: int = 30
-    ingest_discussion_pages: int = 1
-
     # Eval
     eval_set_path: str = "./data/eval_sets/fastapi_discussions_eval.jsonl"
 

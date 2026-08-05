@@ -3,11 +3,8 @@ Turn normalized FastAPI doc pages (see docs_loader.py) into embeddable
 chunks, structurally split on `##`/`###` headings.
 
 Metadata shape is kept consistent with the discussions chunker
-(chunker.py): source_type, title, url, content_hash are common to every
-chunk regardless of source; section/path/chunk_index are docs-only, since
-GitHub Discussions answers aren't broken into sub-sections (see README TODO
--- that assumption hasn't been validated against real discussion bodies
-yet, only asserted here).
+(chunker.py): source_type, title, url, chunk_index, parent_id, content_hash
+are common to every chunk regardless of source; section/path are docs-only.
 
 Chunking strategy:
   1. Split each page into sections at `##`/`###` headings (never at `#`,
@@ -15,7 +12,7 @@ Chunking strategy:
      nearest `##`/`###` ancestor's section).
   2. Within a section, split into atomic blocks at blank lines, treating
      each fenced ```code``` block as a single atomic block that is never
-     split.
+     split (packing.py).
   3. Greedily pack those blocks into chunks targeting 400-600 tokens
      (approximated at ~4 chars/token -- there's no exact tokenizer here
      since embeddings come from a local Ollama model, not an OpenAI-style
@@ -23,7 +20,12 @@ Chunking strategy:
      chunk keeps absorbing blocks until it has *reached* 400 tokens, even
      if that means overshooting 600 for one chunk. The only hard
      invariant is that a fenced code block is never split to hit either
-     bound.
+     bound (packing.py).
+  4. Since packing happens per-section, a page with many short `###`
+     subsections under one `##` parent still emits one micro-chunk per
+     subsection. A post-pass (`_merge_undersized`) merges consecutive
+     chunks that share a `##` ancestor and are still under 150 tokens,
+     then drops whatever's left under 25 tokens.
 
 Usage:
     uv run python -m rag_eval.ingestion.docs_chunker
@@ -45,18 +47,37 @@ from rag_eval.ingestion.docs_loader import (
     NormalizedDoc,
     load_normalized_docs,
 )
+from rag_eval.ingestion.packing import (
+    CHARS_PER_TOKEN,
+    TARGET_MAX_TOKENS,
+    _atomic_blocks,
+    _estimate_tokens,
+    _pack_blocks,
+    _split_into_blocks,
+    _split_oversized_block,
+)
 
 logger = logging.getLogger(__name__)
 
-TARGET_MIN_TOKENS = 400
-TARGET_MAX_TOKENS = 600
-CHARS_PER_TOKEN = 4
+# Re-exported from packing.py so existing imports of these names from
+# docs_chunker keep working now that they live in a shared module.
+__all__ = [
+    "CHARS_PER_TOKEN",
+    "TARGET_MAX_TOKENS",
+    "_atomic_blocks",
+    "_estimate_tokens",
+    "_pack_blocks",
+    "_split_into_blocks",
+    "_split_oversized_block",
+    "doc_to_chunks",
+    "load_doc_chunks",
+]
 
-
-def _estimate_tokens(text: str) -> int:
-    """Rough token count, ~4 chars/token (no exact tokenizer for the local
-    embedding model)."""
-    return max(1, (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN)
+# Undersized-chunk merge pass (see doc_to_chunks / _merge_undersized): looser
+# than packing.py's own 400-token floor, since this runs across whole
+# sections rather than within one.
+MERGE_MIN_TOKENS = 150
+DROP_BELOW_TOKENS = 25
 
 
 def _content_hash(text: str) -> str:
@@ -159,115 +180,41 @@ def _assign_anchors(sections: list[_Section], anchors: list[HeadingAnchor], path
 
 
 # ---------------------------------------------------------------------------
-# 2. Split a section into atomic blocks (paragraphs / fenced code)
+# 2. Undersized-chunk merge pass (post per-section packing)
 # ---------------------------------------------------------------------------
 
 
-def _split_into_blocks(lines: list[str]) -> list[tuple[str, bool]]:
-    """Split a section's lines into (text, is_code) blocks: each fenced
-    ```code``` block is one atomic block, each blank-line-delimited chunk
-    of prose (which may itself be a long, blank-line-free list) is another."""
-    blocks: list[tuple[str, bool]] = []
-    buf: list[str] = []
-    in_fence = False
-
-    def flush(is_code: bool = False) -> None:
-        if buf and any(line.strip() for line in buf):
-            blocks.append(("\n".join(buf).strip("\n"), is_code))
-        buf.clear()
-
-    for line in lines:
-        if line.strip().startswith(_FENCE_PREFIX):
-            if not in_fence:
-                flush()
-                buf.append(line)
-                in_fence = True
-            else:
-                buf.append(line)
-                flush(is_code=True)
-                in_fence = False
-            continue
-
-        if in_fence:
-            buf.append(line)
-            continue
-
-        if not line.strip():
-            flush()
-            continue
-
-        buf.append(line)
-
-    flush()
-    return blocks
+def _h2_breadcrumb(breadcrumb: str) -> str:
+    """The top-level `##` ancestor of a section's breadcrumb -- used to
+    group `###` siblings for both the merge pass below and parent_id."""
+    return breadcrumb.split(" > ")[0]
 
 
-def _split_oversized_block(block: str) -> list[str]:
-    """Split a non-code block that alone exceeds the chunk cap (e.g. a long,
-    blank-line-free bullet list of PR links in release-notes.md) by line, so
-    no single unit blows past the target -- unlike fenced code, prose/list
-    text has no atomicity requirement to protect."""
-    parts: list[str] = []
-    buf: list[str] = []
-    buf_tokens = 0
+def _merge_undersized(
+    chunks: list[dict], min_tokens: int = MERGE_MIN_TOKENS, drop_below: int = DROP_BELOW_TOKENS
+) -> list[dict]:
+    """Merge consecutive chunks that share a `##` ancestor and are still
+    under `min_tokens`, then drop whatever's left under `drop_below`.
 
-    for line in block.splitlines():
-        line_tokens = _estimate_tokens(line)
-        if buf and buf_tokens + line_tokens > TARGET_MAX_TOKENS:
-            parts.append("\n".join(buf))
-            buf = [line]
-            buf_tokens = line_tokens
-        else:
-            buf.append(line)
-            buf_tokens += line_tokens
-
-    if buf:
-        parts.append("\n".join(buf))
-    return parts
-
-
-def _atomic_blocks(lines: list[str]) -> list[str]:
-    """The final list of unsplittable text units for a section: fenced code
-    blocks stay whole no matter their size; oversized prose/list blocks are
-    broken up by line first."""
-    result: list[str] = []
-    for text, is_code in _split_into_blocks(lines):
-        if not is_code and _estimate_tokens(text) > TARGET_MAX_TOKENS:
-            result.extend(_split_oversized_block(text))
-        else:
-            result.append(text)
-    return result
-
-
-# ---------------------------------------------------------------------------
-# 3. Greedily pack blocks into token-bounded chunks
-# ---------------------------------------------------------------------------
-
-
-def _pack_blocks(blocks: list[str]) -> list[str]:
-    """Pack atomic blocks into chunks, prioritizing the 400-token floor
-    over the 600-token ceiling (see module docstring). A fenced code block
-    that alone exceeds the cap still forms its own oversized chunk, since
-    it's never split."""
-    chunks: list[str] = []
-    current: list[str] = []
-    current_tokens = 0
-
-    for block in blocks:
-        block_tokens = _estimate_tokens(block)
-        if current and current_tokens >= TARGET_MIN_TOKENS and (
-            current_tokens + block_tokens > TARGET_MAX_TOKENS
+    `_pack_blocks` packs only within one section, so a page with many short
+    `###` subsections under one `##` parent still emits one micro-chunk per
+    subsection (avg 210 tokens, 134 under 50 across the corpus before this
+    pass). Chunks are assumed to already be in document order.
+    """
+    merged: list[dict] = []
+    for chunk in chunks:
+        prev = merged[-1] if merged else None
+        if (
+            prev is not None
+            and _estimate_tokens(prev["document"]) < min_tokens
+            and _h2_breadcrumb(prev["metadata"]["section"])
+            == _h2_breadcrumb(chunk["metadata"]["section"])
         ):
-            chunks.append("\n\n".join(current))
-            current = [block]
-            current_tokens = block_tokens
+            prev["document"] = prev["document"] + "\n\n" + chunk["document"]
         else:
-            current.append(block)
-            current_tokens += block_tokens
+            merged.append({"document": chunk["document"], "metadata": dict(chunk["metadata"])})
 
-    if current:
-        chunks.append("\n\n".join(current))
-    return chunks
+    return [c for c in merged if _estimate_tokens(c["document"]) >= drop_below]
 
 
 # ---------------------------------------------------------------------------
@@ -306,16 +253,14 @@ def doc_to_chunks(doc: NormalizedDoc, base_url: str = settings.docs_base_url) ->
     sections = _split_sections(doc.text)
     _assign_anchors(sections, doc.anchors, path_str)
 
-    chunks: list[dict] = []
+    raw_chunks: list[dict] = []
     for section in sections:
         blocks = _atomic_blocks(section.lines)
         if not blocks:
             continue
-        for chunk_index, chunk_text in enumerate(_pack_blocks(blocks)):
-            chunk_id = _content_hash(f"{path_str}::{section.breadcrumb}::{chunk_index}")
-            chunks.append(
+        for chunk_text in _pack_blocks(blocks):
+            raw_chunks.append(
                 {
-                    "id": chunk_id,
                     "document": chunk_text,
                     "metadata": {
                         "source_type": "docs",
@@ -323,11 +268,26 @@ def doc_to_chunks(doc: NormalizedDoc, base_url: str = settings.docs_base_url) ->
                         "section": section.breadcrumb,
                         "path": path_str,
                         "url": _doc_url(path_str, section.anchor, base_url),
-                        "chunk_index": chunk_index,
-                        "content_hash": _content_hash(chunk_text),
                     },
                 }
             )
+
+    chunks: list[dict] = []
+    for chunk_index, chunk in enumerate(_merge_undersized(raw_chunks)):
+        meta = chunk["metadata"]
+        document = chunk["document"]
+        chunks.append(
+            {
+                "id": _content_hash(f"{path_str}::{meta['section']}::{chunk_index}"),
+                "document": document,
+                "metadata": {
+                    **meta,
+                    "chunk_index": chunk_index,
+                    "parent_id": _content_hash(f"{path_str}::{_h2_breadcrumb(meta['section'])}"),
+                    "content_hash": _content_hash(document),
+                },
+            }
+        )
     return chunks
 
 

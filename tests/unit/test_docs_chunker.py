@@ -10,6 +10,7 @@ from rag_eval.ingestion.docs_chunker import (
     _atomic_blocks,
     _doc_url,
     _estimate_tokens,
+    _merge_undersized,
     _pack_blocks,
     _split_into_blocks,
     _split_oversized_block,
@@ -260,6 +261,87 @@ def test_pack_blocks_oversized_single_block_forms_its_own_chunk():
 
 
 # ---------------------------------------------------------------------------
+# _merge_undersized
+# ---------------------------------------------------------------------------
+
+
+def _raw_chunk(section: str, n_tokens: int) -> dict:
+    return {"document": _block(n_tokens), "metadata": {"section": section}}
+
+
+def test_merge_undersized_merges_consecutive_chunks_sharing_h2_parent():
+    chunks = [
+        _raw_chunk("Parent", 30),
+        _raw_chunk("Parent > Child A", 30),
+        _raw_chunk("Parent > Child B", 30),
+    ]
+
+    merged = _merge_undersized(chunks, min_tokens=150, drop_below=25)
+
+    assert len(merged) == 1
+    assert merged[0]["document"] == "\n\n".join(c["document"] for c in chunks)
+    assert merged[0]["metadata"]["section"] == "Parent"  # keeps the first chunk's metadata
+
+
+def test_merge_undersized_stops_absorbing_once_floor_is_reached():
+    chunks = [_raw_chunk("Parent", 160), _raw_chunk("Parent > Child A", 30)]
+
+    merged = _merge_undersized(chunks, min_tokens=150, drop_below=25)
+
+    assert len(merged) == 2
+
+
+def test_merge_undersized_does_not_merge_across_different_h2_parents():
+    chunks = [_raw_chunk("Section One", 30), _raw_chunk("Section Two", 30)]
+
+    merged = _merge_undersized(chunks, min_tokens=150, drop_below=25)
+
+    assert len(merged) == 2
+
+
+def test_merge_undersized_drops_chunks_still_under_the_floor():
+    chunks = [_raw_chunk("Section One", 30), _raw_chunk("Section Two", 10)]
+
+    merged = _merge_undersized(chunks, min_tokens=150, drop_below=25)
+
+    assert len(merged) == 1
+    assert merged[0]["metadata"]["section"] == "Section One"
+
+
+def test_doc_to_chunks_merges_short_h3_siblings_under_one_h2_parent():
+    text = (
+        f"## Parent\n{_block(10)}\n\n"
+        f"### Child A\n{_block(10)}\n\n"
+        f"### Child B\n{_block(10)}"
+    )
+    anchors = [
+        HeadingAnchor(level=2, title="Parent", anchor="parent"),
+        HeadingAnchor(level=3, title="Child A", anchor="child-a"),
+        HeadingAnchor(level=3, title="Child B", anchor="child-b"),
+    ]
+    doc = NormalizedDoc(path=Path("guide.md"), raw_text=text, text=text, anchors=anchors)
+
+    chunks = doc_to_chunks(doc, base_url="https://example.com")
+
+    assert len(chunks) == 1
+    assert len({c["metadata"]["parent_id"] for c in chunks}) == 1
+
+
+def test_doc_to_chunks_gives_different_h2_parents_different_parent_ids():
+    text = f"## Section One\n{_block(200)}\n\n## Section Two\n{_block(200)}"
+    anchors = [
+        HeadingAnchor(level=2, title="Section One", anchor="section-one"),
+        HeadingAnchor(level=2, title="Section Two", anchor="section-two"),
+    ]
+    doc = NormalizedDoc(path=Path("guide.md"), raw_text=text, text=text, anchors=anchors)
+
+    chunks = doc_to_chunks(doc, base_url="https://example.com")
+
+    assert len(chunks) == 2
+    assert len({c["metadata"]["parent_id"] for c in chunks}) == 2
+
+
+# ---------------------------------------------------------------------------
 # _doc_url
 # ---------------------------------------------------------------------------
 
@@ -287,13 +369,16 @@ def test_doc_url_strips_trailing_slash_on_base_url():
 
 
 def test_doc_to_chunks_produces_one_chunk_per_section_with_metadata():
+    # Each section's content is >=25 tokens (the drop floor) and the three
+    # sections are siblings (different ##/no-heading top levels), so none
+    # of _merge_undersized's merge-or-drop pass fires here.
     text = (
         "# Page Title\n"
-        "Intro paragraph.\n\n"
+        f"Intro paragraph. {_block(30)}\n\n"
         "## Section One\n"
-        "Content of section one.\n\n"
+        f"Content of section one. {_block(30)}\n\n"
         "## Section Two\n"
-        "Content of section two."
+        f"Content of section two. {_block(30)}"
     )
     anchors = [
         HeadingAnchor(level=1, title="Page Title", anchor="page-title"),
@@ -316,6 +401,8 @@ def test_doc_to_chunks_produces_one_chunk_per_section_with_metadata():
     assert {c["id"] for c in chunks} == {c["id"] for c in chunks}  # all present
     assert len({c["id"] for c in chunks}) == 3  # and unique
     assert all(len(c["metadata"]["content_hash"]) == 16 for c in chunks)
+    # three distinct ## parents (no heading, Section One, Section Two) -> three distinct parent_ids
+    assert len({c["metadata"]["parent_id"] for c in chunks}) == 3
 
 
 def test_doc_to_chunks_chunk_index_is_per_section():
@@ -334,13 +421,16 @@ def test_doc_to_chunks_chunk_index_is_per_section():
 
 
 def test_load_doc_chunks_end_to_end(tmp_path: Path):
+    # Section bodies need to clear the 25-token drop floor (_merge_undersized)
+    # to survive into the output, since these two sections are siblings
+    # (different top-level ##s) and so are never merged with each other.
     docs_dir = tmp_path / "docs"
     docs_src_dir = tmp_path / "docs_src"
     docs_dir.mkdir()
     docs_src_dir.mkdir()
     (docs_dir / "index.md").write_text(
-        "# Home { #home }\n\nWelcome to the docs.\n\n"
-        "## Getting Started { #getting-started }\n\nRun `pip install foo`.",
+        f"# Home {{ #home }}\n\nWelcome to the docs. {_block(30)}\n\n"
+        f"## Getting Started {{ #getting-started }}\n\nRun `pip install foo`. {_block(30)}",
         encoding="utf-8",
     )
 
