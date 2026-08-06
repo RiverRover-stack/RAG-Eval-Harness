@@ -1,0 +1,56 @@
+name: Deploy to Hugging Face Space
+
+# Runs only after CI has gone green on main -- never deploys an unvalidated
+# commit (docs/plan.md Phase 3: "on main after CI green").
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the Space push directory
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/space-push
+          mkdir -p /tmp/space-push
+          # Everything the Docker build needs, nothing else -- mirrors .dockerignore.
+          rsync -a \
+            --exclude='.git' --exclude='.github' --exclude='.claude' \
+            --exclude='.venv' --exclude='__pycache__' \
+            --exclude='data/raw' --exclude='data/processed' --exclude='data/eval_sets' \
+            --exclude='runs' --exclude='frontend' --exclude='notebooks' \
+            --exclude='tests' --exclude='docs' \
+            . /tmp/space-push/
+          # Space README (with the HF YAML front-matter) replaces the portfolio one.
+          cp deploy/space/README.md /tmp/space-push/README.md
+
+      - name: Push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ secrets.HF_SPACE }} # e.g. "your-username/rag-eval-harness"
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_SPACE:-}" ] || [ -z "${HF_TOKEN:-}" ]; then
+            echo "::error::HF_SPACE and HF_TOKEN repo secrets must be set before this workflow can deploy."
+            exit 1
+          fi
+          cd /tmp/space-push
+          git init -q
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git add -A
+          git commit -q -m "Deploy ${{ github.sha }}"
+          # Force-push: the Space remote is a deploy target, not a project
+          # history -- each push replaces its single-commit state, it never
+          # needs to retain prior revisions.
+          git push -q -f "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" HEAD:main

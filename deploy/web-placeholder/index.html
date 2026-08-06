@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG Eval Harness</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      max-width: 640px;
+      margin: 8rem auto 4rem;
+      padding: 0 1.5rem;
+      line-height: 1.6;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { color: #666; }
+    code {
+      background: rgba(127, 127, 127, 0.15);
+      border-radius: 4px;
+      padding: 0.15em 0.4em;
+      font-size: 0.9em;
+    }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <h1>RAG Eval Harness</h1>
+  <p>
+    The API is live at <code>/api</code> (try <a href="/api/health">/api/health</a>).
+    The frontend build isn't in place yet — this placeholder ships with the
+    container so the deploy pipeline (Dockerfile, CI, Hugging Face Space) can
+    be exercised end to end before the Next.js UI lands.
+  </p>
+</body>
+</html>
