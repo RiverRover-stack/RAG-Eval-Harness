@@ -1,0 +1,5 @@
+# The trustworthy baseline: dense-only retrieval, generation off. This is
+# the number the README leads with and the one every later experiment gets
+# compared against.
+name: baseline-dense
+extends: _base.yaml

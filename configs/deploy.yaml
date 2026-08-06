@@ -1,0 +1,6 @@
+# What the container actually serves: same retrieval as the baseline, but
+# with generation switched on since this is the config the live demo runs.
+name: deploy
+extends: _base.yaml
+generation:
+  enabled: true
