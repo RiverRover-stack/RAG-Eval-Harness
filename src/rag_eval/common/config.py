@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # Chroma
     chroma_persist_dir: str = "./data/processed/chroma"
 
+    # fastembed's ONNX model cache -- a path, not metric-affecting, so it
+    # stays in Settings rather than RunConfig. Phase 3 bakes this into a
+    # Docker layer.
+    fastembed_cache_dir: str = "./data/processed/fastembed"
+
     # Ollama
     ollama_base_url: str = "http://localhost:11434"
     ollama_llm_model: str = "fdm-llama"

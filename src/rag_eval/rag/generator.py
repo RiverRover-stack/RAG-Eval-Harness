@@ -1,9 +1,14 @@
-"""Answer generation via a local Ollama LLM, grounded in retrieved chunks."""
+"""Answer generation via the LLM provider layer, grounded in retrieved chunks.
 
-import ollama
+Defaults to Ollama (providers.DEFAULT_LLM_PROVIDER) until Phase 4's
+RunConfig makes the serving LLM a yaml value -- switching the default to
+Groq here would confound any nomic-vs-bge retrieval comparison with a
+generator change.
+"""
 
-from rag_eval.common.config import settings
 from rag_eval.common.schemas import RetrievedChunk
+from rag_eval.providers import get_llm
+from rag_eval.providers.base import LLMProvider
 
 SYSTEM_PROMPT = (
     "You answer FastAPI questions using only the provided context, which is "
@@ -17,13 +22,14 @@ def build_prompt(question: str, chunks: list[RetrievedChunk]) -> str:
     return f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer:"
 
 
-def generate_answer(question: str, chunks: list[RetrievedChunk]) -> str:
-    client = ollama.Client(host=settings.ollama_base_url)
-    response = client.chat(
-        model=settings.ollama_llm_model,
-        messages=[
+def generate_answer(
+    question: str, chunks: list[RetrievedChunk], llm: LLMProvider | None = None
+) -> str:
+    llm = llm or get_llm()
+    response = llm.complete(
+        [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_prompt(question, chunks)},
-        ],
+        ]
     )
-    return response["message"]["content"]
+    return response.content
