@@ -190,6 +190,18 @@ Kills causes 1, 2, 3, and the chunk-size problem.
 
 **Verify:** `SNAPSHOT.json` chunk count matches a fresh run; ≥60% of chunks land in 150–600 tokens and none under 25 (from: avg 210, 134 under 50, 9.6% in band); `discussions.json` covers ⊇ the eval set's `source_url`s; **re-run the legacy eval with the generator unchanged and confirm `context_recall` moves 0.378 → ≥0.65.** Record that number — it is the headline of the debugging narrative.
 
+**Result (see `runs/_pinned/0001-phase1-corpus-fix/`):** ✅ `SNAPSHOT.json`
+reproducible (987 chunks); 62.6% of chunks in the 150–600 token band, none
+under 25 (avg 210 → 244); `discussions.json` covers all 27 eval-set
+`source_url`s. ⚠️ `context_recall` moved **0.378 → 0.4284**, short of the
+≥0.65 target — the honest reasons (unregenerated eval set still using bare
+titles, one RAGAS job dropped to a judge context-window overflow, no
+self-retrieval guard yet, n=8) are in the pinned README. `faithfulness`
+nearly doubled (0.2952 → 0.5917), the more trustworthy signal at this
+sample size. Closing the recall gap needs the query fix applied to a
+regenerated eval set (Phase 4) and hybrid retrieval (Phase 6) — not
+something to force here.
+
 **Do not re-index yet.** Phase 2 changes the embedding space.
 
 ### Phase 2 — Providers, namespaced collections, the one re-index
