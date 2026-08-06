@@ -22,7 +22,11 @@ dependencies = [
     "tqdm>=4.66",
     "typer>=0.12",
     "langchain-community<0.4",
+    "pyyaml>=6.0",
 ]
+
+[project.scripts]
+rag-eval = "rag_eval.cli:app"
 
 [project.optional-dependencies]
 dev = [
