@@ -25,7 +25,7 @@ import logging
 import random
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -223,7 +223,12 @@ def build_docs_synth_v1(
     n_target: int = 150,
     seed: int = 0,
     dataset_name: str = "docs_synth_v1",
+    checkpoint_fn: Callable[[list[EvalItem], BuildReport], None] | None = None,
 ) -> tuple[list[EvalItem], BuildReport]:
+    """checkpoint_fn, if given, is called after every chunk (accepted or
+    not) with the accepted items and report so far -- a real run is ~300
+    sequential API calls, and without incremental persistence a single
+    failure near the end would throw away everything before it."""
     trigram_df = build_trigram_doc_freq([c["document"] for c in chunks])
     sampled = stratified_sample(chunks, n_target, seed=seed)
 
@@ -234,55 +239,64 @@ def build_docs_synth_v1(
     for chunk in sampled:
         chunk_text = chunk["document"]
         try:
-            response = llm.complete(
-                [
-                    {"role": "system", "content": GENERATION_SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": f"Page: {chunk['metadata'].get('title', '')}\n\n"
-                        f"Passage:\n{chunk_text}\n\nQuestion:",
-                    },
-                ],
-                temperature=0.7,
-                max_tokens=100,
+            try:
+                response = llm.complete(
+                    [
+                        {"role": "system", "content": GENERATION_SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": f"Page: {chunk['metadata'].get('title', '')}\n\n"
+                            f"Passage:\n{chunk_text}\n\nQuestion:",
+                        },
+                    ],
+                    temperature=0.7,
+                    max_tokens=100,
+                )
+                question = response.content.strip().strip('"')
+            except Exception:
+                logger.exception("generation failed for chunk %s", chunk["id"])
+                report.rejected_generation_error += 1
+                continue
+
+            report.generated += 1
+            try:
+                if not question:
+                    report.rejected_generation_error += 1
+                    continue
+
+                if lexical_overlap_reject(question, chunk_text, trigram_df):
+                    report.rejected_lexical += 1
+                    continue
+
+                if closed_book_reject(
+                    question, chunk_text, closed_book_llm=closed_book_llm, embedder=embedder
+                ):
+                    report.rejected_closed_book += 1
+                    continue
+
+                question_vec = embedder.embed_query(question)
+                if near_duplicate_reject(question_vec, accepted_embeddings):
+                    report.rejected_duplicate += 1
+                    continue
+            except Exception:
+                logger.exception("filtering failed for chunk %s", chunk["id"])
+                report.rejected_generation_error += 1
+                continue
+
+            item = EvalItem(
+                id=chunk["id"],
+                dataset=dataset_name,
+                question=question,
+                ground_truth=chunk_text,
+                gold_urls=[chunk["metadata"].get("url", "")],
+                provenance=f"synth:{chunk['id']}",
             )
-            question = response.content.strip().strip('"')
-        except Exception:
-            logger.exception("generation failed for chunk %s", chunk["id"])
-            report.rejected_generation_error += 1
-            continue
-
-        report.generated += 1
-        if not question:
-            report.rejected_generation_error += 1
-            continue
-
-        if lexical_overlap_reject(question, chunk_text, trigram_df):
-            report.rejected_lexical += 1
-            continue
-
-        if closed_book_reject(
-            question, chunk_text, closed_book_llm=closed_book_llm, embedder=embedder
-        ):
-            report.rejected_closed_book += 1
-            continue
-
-        question_vec = embedder.embed_query(question)
-        if near_duplicate_reject(question_vec, accepted_embeddings):
-            report.rejected_duplicate += 1
-            continue
-
-        item = EvalItem(
-            id=chunk["id"],
-            dataset=dataset_name,
-            question=question,
-            ground_truth=chunk_text,
-            gold_urls=[chunk["metadata"].get("url", "")],
-            provenance=f"synth:{chunk['id']}",
-        )
-        accepted_items.append(item)
-        accepted_embeddings.append(question_vec)
-        report.retained += 1
-        report.sections_covered.add(_top_level_section(chunk))
+            accepted_items.append(item)
+            accepted_embeddings.append(question_vec)
+            report.retained += 1
+            report.sections_covered.add(_top_level_section(chunk))
+        finally:
+            if checkpoint_fn is not None:
+                checkpoint_fn(accepted_items, report)
 
     return accepted_items, report
