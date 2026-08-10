@@ -51,6 +51,11 @@ target-version = "py311"
 # don't lint or fix someone else's docs_src.
 extend-exclude = ["data/corpus"]
 
+[tool.ruff.lint.flake8-bugbear]
+# typer's documented pattern is typer.Option(...)/typer.Argument(...) as an
+# argument default -- ruff's B008 doesn't know that's safe unless told.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

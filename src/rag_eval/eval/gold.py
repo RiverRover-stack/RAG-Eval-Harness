@@ -31,6 +31,11 @@ class EvalItem(BaseModel):
     gold_granularity: Literal["anchor", "page"] = "anchor"
     exclude_chunk_ids: list[str] = []  # self-retrieval leakage guard
     provenance: str = ""
+    # filled in by eval/review.py's human checkpoints; None means "not
+    # reviewed yet", not "rejected" -- most items in docs_synth_v1 stay None
+    # forever, since only a sample gets human-reviewed.
+    verified: Literal["yes", "no", "edited"] | None = None
+    verified_at: str | None = None
 
 
 @dataclass
