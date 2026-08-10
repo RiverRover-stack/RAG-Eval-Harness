@@ -225,6 +225,42 @@ def test_build_docs_synth_v1_rejects_lexical_and_retains_clean_item():
     assert items[0].dataset == "docs_synth_v1"
 
 
+def test_build_docs_synth_v1_calls_checkpoint_fn_once_per_chunk_regardless_of_outcome():
+    gen_llm = ScriptedLLM(
+        {
+            "Page: T1": "How do you validate API responses in FastAPI?",
+            "Page: T2": "Why does the zxqvy_flibbertigibbet_token controls internal retry jitter?",
+        }
+    )
+    closed_book_llm = ScriptedLLM({"How do you validate": "not sure, maybe logging?"})
+    embedder = VectorMapEmbedder(
+        {
+            CHUNK_TUTORIAL["document"]: [1.0, 0.0, 0.0],
+            "not sure, maybe logging?": [0.0, 1.0, 0.0],
+            "How do you validate API responses in FastAPI?": [0.0, 0.0, 1.0],
+        }
+    )
+    checkpoints: list[tuple[int, int]] = []
+
+    def checkpoint_fn(items, report):
+        checkpoints.append((len(items), report.generated))
+
+    build_docs_synth_v1(
+        [CHUNK_TUTORIAL, CHUNK_ADVANCED],
+        llm=gen_llm,
+        closed_book_llm=closed_book_llm,
+        embedder=embedder,
+        n_target=2,
+        seed=0,
+        checkpoint_fn=checkpoint_fn,
+    )
+    # one checkpoint per sampled chunk, in order -- the rejected one first
+    # (advanced, alphabetically before tutorial in stratified_sample),
+    # then the retained one.
+    assert len(checkpoints) == 2
+    assert checkpoints[-1][0] == 1  # final checkpoint sees the one retained item
+
+
 def test_build_docs_synth_v1_counts_generation_errors():
     gen_llm = ScriptedLLM({}, raise_markers=frozenset({"Page: T1", "Page: T2"}))
     closed_book_llm = ScriptedLLM({})
