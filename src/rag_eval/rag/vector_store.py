@@ -130,11 +130,12 @@ def query(
         where=where,
     )
     out = []
-    # documents/metadatas/distances are declared Optional in chromadb's stubs but
-    # are always present on a successful query() call.
+    # ids/documents/metadatas/distances are declared Optional in chromadb's stubs
+    # but are always present on a successful query() call.
+    ids = result["ids"] or []
     docs = result["documents"] or []
     metas = result["metadatas"] or []
     dists = result["distances"] or []
-    for doc, meta, dist in zip(docs[0], metas[0], dists[0]):
-        out.append({"content": doc, "metadata": meta, "score": 1 - dist})
+    for chunk_id, doc, meta, dist in zip(ids[0], docs[0], metas[0], dists[0]):
+        out.append({"id": chunk_id, "content": doc, "metadata": meta, "score": 1 - dist})
     return out
