@@ -1,0 +1,9 @@
+# What the CI gate runs against: no LLM calls anywhere in the loop, so a
+# PR can be scored on zero API quota and no Ollama. See eval/gate.py.
+name: ci
+extends: _base.yaml
+generation:
+  enabled: false
+eval:
+  judge:
+    enabled: false

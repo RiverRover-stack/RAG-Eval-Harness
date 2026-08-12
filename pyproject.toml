@@ -22,7 +22,11 @@ dependencies = [
     "tqdm>=4.66",
     "typer>=0.12",
     "langchain-community<0.4",
+    "pyyaml>=6.0",
 ]
+
+[project.scripts]
+rag-eval = "rag_eval.cli:app"
 
 [project.optional-dependencies]
 dev = [
@@ -46,6 +50,11 @@ target-version = "py311"
 # Vendored FastAPI docs snippets (scripts/fetch_corpus.py), not our code --
 # don't lint or fix someone else's docs_src.
 extend-exclude = ["data/corpus"]
+
+[tool.ruff.lint.flake8-bugbear]
+# typer's documented pattern is typer.Option(...)/typer.Argument(...) as an
+# argument default -- ruff's B008 doesn't know that's safe unless told.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
