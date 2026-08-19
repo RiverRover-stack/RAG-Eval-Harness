@@ -101,6 +101,65 @@ def test_groq_llm_requires_api_key():
         GroqLLM(model="llama-3.3-70b-versatile", api_key="")
 
 
+def test_groq_llm_retries_on_429_then_succeeds(monkeypatch):
+    monkeypatch.setattr("rag_eval.providers.llm.groq.time.sleep", lambda _seconds: None)
+    calls = {"n": 0}
+
+    def fake_post(url, *, headers, json, timeout):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(429, headers={}, request=httpx.Request("POST", url))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "answer"}}], "usage": {}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr("rag_eval.providers.llm.groq.httpx.post", fake_post)
+    llm = GroqLLM(model="llama-3.3-70b-versatile", api_key="test-key")
+    result = llm.complete([{"role": "user", "content": "hello"}])
+
+    assert calls["n"] == 3
+    assert result.content == "answer"
+
+
+def test_groq_llm_raises_after_exhausting_retries(monkeypatch):
+    monkeypatch.setattr("rag_eval.providers.llm.groq.time.sleep", lambda _seconds: None)
+
+    def always_429(url, *, headers, json, timeout):
+        return httpx.Response(429, headers={}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("rag_eval.providers.llm.groq.httpx.post", always_429)
+    llm = GroqLLM(model="llama-3.3-70b-versatile", api_key="test-key")
+
+    with pytest.raises(httpx.HTTPStatusError):
+        llm.complete([{"role": "user", "content": "hello"}])
+
+
+def test_groq_llm_respects_retry_after_header(monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr("rag_eval.providers.llm.groq.time.sleep", sleeps.append)
+    calls = {"n": 0}
+
+    def fake_post(url, *, headers, json, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(
+                429, headers={"retry-after": "1.5"}, request=httpx.Request("POST", url)
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}], "usage": {}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr("rag_eval.providers.llm.groq.httpx.post", fake_post)
+    llm = GroqLLM(model="llama-3.3-70b-versatile", api_key="test-key")
+    llm.complete([{"role": "user", "content": "hello"}])
+
+    assert sleeps == [1.5]
+
+
 def test_gemini_llm_complete_request_shape_and_response_parse(monkeypatch):
     captured = {}
 

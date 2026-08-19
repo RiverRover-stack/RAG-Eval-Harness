@@ -161,7 +161,12 @@ def run_experiment(
     started = time.perf_counter()
 
     for dataset_name in cfg.eval.datasets:
-        raw_items = load_dataset(dataset_name, eval_sets_dir)
+        # verified == "no" means a human reviewer looked at this item and
+        # rejected it (bad question, wrong gold, etc.) -- scoring against a
+        # label that's known to be wrong would corrupt the metric, so it's
+        # excluded here rather than left to silently drag the number down.
+        # Unreviewed items (verified is None) are scored provisionally.
+        raw_items = [item for item in load_dataset(dataset_name, eval_sets_dir) if item.verified != "no"]
         dataset_shas[dataset_name] = dataset_sha256(dataset_name, eval_sets_dir)
 
         per_item_for_agg: list[tuple[Sequence[str], set[str]]] = []
