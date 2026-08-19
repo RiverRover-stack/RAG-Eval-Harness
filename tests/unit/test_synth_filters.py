@@ -85,6 +85,24 @@ def test_lexical_overlap_ignores_common_trigrams():
     assert lexical_overlap_reject(question, CHUNK_TEXT, df) is False
 
 
+def test_lexical_overlap_ignores_stopword_only_trigrams_even_if_rare():
+    # on a small corpus, ordinary connective phrasing ("to the project",
+    # "support for reading") is technically rare by document frequency too
+    # -- caught on a real run against the FastAPI docs -- but it isn't
+    # distinctive, so it shouldn't disqualify a perfectly good question.
+    passage = "You can add support for reading configuration from a .env file."
+    df = build_trigram_doc_freq([passage])
+    question = "How do I add support for reading settings from a file?"
+    assert lexical_overlap_reject(question, passage, df) is False
+
+
+def test_lexical_overlap_still_fires_when_content_words_overlap_despite_a_stopword_nearby():
+    passage = "The PATH environment variable lists directories to search."
+    df = build_trigram_doc_freq([passage])
+    question = "How does the PATH environment variable get modified?"
+    assert lexical_overlap_reject(question, passage, df) is True
+
+
 # ---------------------------------------------------------------------------
 # closed_book_reject
 # ---------------------------------------------------------------------------

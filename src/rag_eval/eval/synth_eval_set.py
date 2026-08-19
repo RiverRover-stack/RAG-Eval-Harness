@@ -55,6 +55,24 @@ GENERATION_SYSTEM_PROMPT = (
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")
 
+# On a corpus this small (~1000 chunks), almost *any* three-word English
+# phrase has a low document frequency just by combinatorial chance -- "to
+# the project", "support for reading", "the encryption of" all came back as
+# "rare" on a real run, and none of them would make BM25 win for free.
+# Requiring every token in the shared trigram to be a content word (no
+# stopwords) is what actually separates "distinctive technical phrase" from
+# "ordinary sentence glue that happened not to repeat elsewhere."
+_STOPWORDS = frozenset(
+    """
+    a an the of to for in on at is are was were be been being do does did
+    doesn don t and or but with from by as that this these those it its i
+    you your my we our they their he she his her if not no so than then
+    there here when where which who whom what how why can could should
+    would will shall may might must have has had having also into out up
+    down over under again further once
+    """.split()  # noqa: SIM905 -- a literal word list is more legible than one giant list literal
+)
+
 
 def _tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
@@ -62,6 +80,10 @@ def _tokenize(text: str) -> list[str]:
 
 def _trigrams(tokens: Sequence[str]) -> set[tuple[str, ...]]:
     return {tuple(tokens[i : i + 3]) for i in range(len(tokens) - 2)}
+
+
+def _is_content_trigram(trigram: tuple[str, ...]) -> bool:
+    return all(token not in _STOPWORDS for token in trigram)
 
 
 def build_trigram_doc_freq(chunk_texts: Sequence[str]) -> Counter[tuple[str, ...]]:
@@ -79,7 +101,8 @@ def lexical_overlap_reject(
     question: str, chunk_text: str, trigram_df: Counter[tuple[str, ...]]
 ) -> bool:
     shared = _trigrams(_tokenize(question)) & _trigrams(_tokenize(chunk_text))
-    return any(trigram_df.get(t, 0) <= RARE_TRIGRAM_DOC_FREQ_MAX for t in shared)
+    content_shared = {t for t in shared if _is_content_trigram(t)}
+    return any(trigram_df.get(t, 0) <= RARE_TRIGRAM_DOC_FREQ_MAX for t in content_shared)
 
 
 # ---------------------------------------------------------------------------
@@ -300,3 +323,42 @@ def build_docs_synth_v1(
                 checkpoint_fn(accepted_items, report)
 
     return accepted_items, report
+
+
+if __name__ == "__main__":
+    # uv run python -m rag_eval.eval.synth_eval_set
+    #
+    # Generation uses Groq's llama-3.3-70b-versatile (docs/plan.md's locked
+    # serving model); the closed-book check deliberately uses a *different*
+    # Groq model (llama-3.1-8b-instant) rather than Gemini -- the project's
+    # GEMINI_API_KEY was invalid when this ran, and the filter only needs
+    # "a model that isn't the generator," not Gemini specifically.
+    import logging
+    from pathlib import Path
+
+    from rag_eval.ingestion.docs_chunker import load_doc_chunks
+    from rag_eval.providers import get_embedder, get_llm
+
+    logging.basicConfig(level=logging.INFO)
+
+    out_path = Path("data/eval_sets/docs_synth_v1.jsonl")
+
+    def _checkpoint(items: list[EvalItem], report: BuildReport) -> None:
+        out_path.write_text(
+            "\n".join(item.model_dump_json() for item in items) + ("\n" if items else ""),
+            encoding="utf-8",
+        )
+        logger.info("checkpoint: %s", report.summary())
+
+    chunks = list(load_doc_chunks())
+    generated_items, build_report = build_docs_synth_v1(
+        chunks,
+        llm=get_llm("groq", "llama-3.3-70b-versatile"),
+        closed_book_llm=get_llm("groq", "llama-3.1-8b-instant"),
+        embedder=get_embedder(),
+        n_target=150,
+        seed=0,
+        checkpoint_fn=_checkpoint,
+    )
+    _checkpoint(generated_items, build_report)
+    print(build_report.summary())

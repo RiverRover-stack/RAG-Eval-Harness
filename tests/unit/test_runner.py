@@ -69,6 +69,40 @@ def test_run_experiment_scores_a_hit_and_a_miss(tmp_path, dataset_dir, gold_inde
     assert hit_row["retrieved"][0]["rank"] == 1
 
 
+def test_run_experiment_excludes_items_rejected_by_human_review(tmp_path, dataset_dir, gold_index):
+    items = [
+        EvalItem(id="good", dataset="d", question="q1", gold_urls=["https://x/#a"]),
+        EvalItem(
+            id="bad",
+            dataset="d",
+            question="q2",
+            gold_urls=["https://x/#a"],
+            verified="no",
+            verified_at="t",
+        ),
+    ]
+    _write_dataset(dataset_dir, "d", items)
+    cfg = _cfg(datasets=["d"], k_values=[1])
+
+    def retrieve_fn(question, run_cfg, deny_ids):
+        return [{"chunk_id": "gold-1", "url": "https://x/#a", "score": 0.9}]
+
+    manifest = run_experiment(
+        cfg,
+        "c.yaml",
+        runs_root=tmp_path / "runs",
+        eval_sets_dir=dataset_dir,
+        gold_index=gold_index,
+        retrieve_fn=retrieve_fn,
+        corpus_sha="test-sha",
+    )
+    assert manifest.metrics["d"]["n"] == 1
+
+    rows = (tmp_path / "runs" / manifest.run_id / "retrieval.jsonl").read_text().splitlines()
+    parsed = [json.loads(r) for r in rows]
+    assert {r["item_id"] for r in parsed} == {"d::good"}
+
+
 def test_self_retrieval_holdout_passes_exclude_ids_as_deny_ids(tmp_path, dataset_dir, gold_index):
     items = [
         EvalItem(
