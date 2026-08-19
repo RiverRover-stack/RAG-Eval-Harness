@@ -73,7 +73,6 @@ _STOPWORDS = frozenset(
     """.split()  # noqa: SIM905 -- a literal word list is more legible than one giant list literal
 )
 
-
 def _tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
 
@@ -84,8 +83,6 @@ def _trigrams(tokens: Sequence[str]) -> set[tuple[str, ...]]:
 
 def _is_content_trigram(trigram: tuple[str, ...]) -> bool:
     return all(token not in _STOPWORDS for token in trigram)
-
-
 def build_trigram_doc_freq(chunk_texts: Sequence[str]) -> Counter[tuple[str, ...]]:
     """Document frequency of each word-trigram across the corpus -- how many
     chunks it appears in, not how many times total. A trigram appearing in
