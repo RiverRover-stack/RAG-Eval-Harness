@@ -61,12 +61,20 @@ def build_gold_index(chunks: Iterable[dict]) -> GoldIndex:
     by_url: dict[str, set[str]] = {}
     by_page: dict[str, set[str]] = {}
     for chunk in chunks:
-        url = chunk["metadata"].get("url", "")
+        meta = chunk["metadata"]
+        url = meta.get("url", "")
         if not url:
             continue
         chunk_id = chunk["id"]
-        by_url.setdefault(url, set()).add(chunk_id)
-        by_page.setdefault(_page_of(url), set()).add(chunk_id)
+        # docs_chunker's undersized-merge pass can fold several subsections
+        # into one chunk; merged_urls (pipe-joined, docs-only) carries every
+        # url beyond the primary one so a gold label naming a swallowed
+        # subsection still resolves to this chunk instead of falling back
+        # to page-level gold.
+        urls = [url, *meta.get("merged_urls", "").split("|")] if meta.get("merged_urls") else [url]
+        for u in urls:
+            by_url.setdefault(u, set()).add(chunk_id)
+            by_page.setdefault(_page_of(u), set()).add(chunk_id)
     return GoldIndex(by_url=by_url, by_page=by_page)
 
 

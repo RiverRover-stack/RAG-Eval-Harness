@@ -127,3 +127,34 @@ def test_build_gold_index_skips_chunks_without_url():
     index = build_gold_index(chunks)
     assert index.by_url == {}
     assert index.by_page == {}
+
+
+def test_build_gold_index_resolves_urls_swallowed_by_undersized_merge():
+    # a docs_chunker chunk that absorbed two shorter sibling sections keeps
+    # only the first section's url as primary and records the rest in
+    # merged_urls -- both must still resolve to this one chunk id.
+    chunks = [
+        {
+            "id": "merged-chunk",
+            "document": "...",
+            "metadata": {
+                "url": "https://fastapi.tiangolo.com/advanced/x/#parent",
+                "merged_urls": (
+                    "https://fastapi.tiangolo.com/advanced/x/#child-a"
+                    "|https://fastapi.tiangolo.com/advanced/x/#child-b"
+                ),
+            },
+        }
+    ]
+    index = build_gold_index(chunks)
+
+    item = EvalItem(
+        id="1",
+        dataset="d",
+        question="q",
+        gold_urls=["https://fastapi.tiangolo.com/advanced/x/#child-a"],
+    )
+    resolved = resolve_gold_chunks(item, index)
+
+    assert resolved.gold_chunk_ids == ["merged-chunk"]
+    assert resolved.gold_granularity == "anchor"  # not a page-level fallback

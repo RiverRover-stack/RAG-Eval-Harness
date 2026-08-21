@@ -33,6 +33,7 @@ EXPECTED_METADATA_KEYS_BY_SOURCE = {
         "section",
         "path",
         "url",
+        "merged_urls",
         "chunk_index",
         "parent_id",
         "content_hash",
