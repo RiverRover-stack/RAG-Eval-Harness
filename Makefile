@@ -16,7 +16,7 @@ index:
 	uv run python -m rag_eval.ingestion.embed_and_store
 
 eval:
-	uv run python -m rag_eval.eval.run_ragas
+	uv run rag-eval eval run --config configs/baseline.yaml
 
 serve:
 	uv run uvicorn rag_eval.api.main:app --reload
