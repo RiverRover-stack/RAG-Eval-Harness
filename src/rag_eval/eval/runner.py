@@ -55,6 +55,12 @@ def _check_supported(cfg: RunConfig) -> None:
         )
     if cfg.eval.self_retrieval == "separate_index":
         raise NotImplementedError("eval.self_retrieval: separate_index isn't built yet")
+    if not cfg.retrieval.dense.enabled:
+        raise NotImplementedError(
+            "retrieval.dense.enabled: false -- dense is the only retrieval stage "
+            "this runner implements, so disabling it leaves nothing to retrieve "
+            "with (docs/plan.md Phase 6 adds bm25/rerank as real alternatives)"
+        )
     for stage_name, is_enabled in _UNIMPLEMENTED_STAGES:
         if is_enabled(cfg.retrieval):
             raise NotImplementedError(
