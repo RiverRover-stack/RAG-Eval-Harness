@@ -200,6 +200,13 @@ def _merge_undersized(
     `###` subsections under one `##` parent still emits one micro-chunk per
     subsection (avg 210 tokens, 134 under 50 across the corpus before this
     pass). Chunks are assumed to already be in document order.
+
+    A merged chunk keeps the *first* absorbed subsection's `url` as its
+    primary metadata (used for citations), but every other subsection's url
+    it swallows is recorded in `merged_urls` (`"|"`-joined -- Chroma
+    metadata values must be scalar, not a list) so gold-label resolution can
+    still find this chunk when a gold URL names one of the swallowed
+    subsections instead of the first one.
     """
     merged: list[dict] = []
     for chunk in chunks:
@@ -211,8 +218,19 @@ def _merge_undersized(
             == _h2_breadcrumb(chunk["metadata"]["section"])
         ):
             prev["document"] = prev["document"] + "\n\n" + chunk["document"]
+            absorbed_url = chunk["metadata"].get("url", "")
+            if absorbed_url and absorbed_url != prev["metadata"].get("url", ""):
+                urls = prev["metadata"]["merged_urls"].split("|") if prev["metadata"]["merged_urls"] else []
+                if absorbed_url not in urls:
+                    urls.append(absorbed_url)
+                prev["metadata"]["merged_urls"] = "|".join(urls)
         else:
-            merged.append({"document": chunk["document"], "metadata": dict(chunk["metadata"])})
+            merged.append(
+                {
+                    "document": chunk["document"],
+                    "metadata": {**chunk["metadata"], "merged_urls": ""},
+                }
+            )
 
     return [c for c in merged if _estimate_tokens(c["document"]) >= drop_below]
 

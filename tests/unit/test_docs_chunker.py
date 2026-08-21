@@ -265,15 +265,15 @@ def test_pack_blocks_oversized_single_block_forms_its_own_chunk():
 # ---------------------------------------------------------------------------
 
 
-def _raw_chunk(section: str, n_tokens: int) -> dict:
-    return {"document": _block(n_tokens), "metadata": {"section": section}}
+def _raw_chunk(section: str, n_tokens: int, url: str = "") -> dict:
+    return {"document": _block(n_tokens), "metadata": {"section": section, "url": url}}
 
 
 def test_merge_undersized_merges_consecutive_chunks_sharing_h2_parent():
     chunks = [
-        _raw_chunk("Parent", 30),
-        _raw_chunk("Parent > Child A", 30),
-        _raw_chunk("Parent > Child B", 30),
+        _raw_chunk("Parent", 30, url="https://example.com/page/#parent"),
+        _raw_chunk("Parent > Child A", 30, url="https://example.com/page/#child-a"),
+        _raw_chunk("Parent > Child B", 30, url="https://example.com/page/#child-b"),
     ]
 
     merged = _merge_undersized(chunks, min_tokens=150, drop_below=25)
@@ -281,6 +281,11 @@ def test_merge_undersized_merges_consecutive_chunks_sharing_h2_parent():
     assert len(merged) == 1
     assert merged[0]["document"] == "\n\n".join(c["document"] for c in chunks)
     assert merged[0]["metadata"]["section"] == "Parent"  # keeps the first chunk's metadata
+    assert merged[0]["metadata"]["url"] == "https://example.com/page/#parent"
+    # the swallowed subsections' urls must stay resolvable for gold labels
+    assert merged[0]["metadata"]["merged_urls"] == (
+        "https://example.com/page/#child-a|https://example.com/page/#child-b"
+    )
 
 
 def test_merge_undersized_stops_absorbing_once_floor_is_reached():
@@ -325,6 +330,11 @@ def test_doc_to_chunks_merges_short_h3_siblings_under_one_h2_parent():
 
     assert len(chunks) == 1
     assert len({c["metadata"]["parent_id"] for c in chunks}) == 1
+    # Child A's and Child B's urls must still resolve to this merged chunk
+    assert chunks[0]["metadata"]["url"] == "https://example.com/guide/#parent"
+    assert chunks[0]["metadata"]["merged_urls"] == (
+        "https://example.com/guide/#child-a|https://example.com/guide/#child-b"
+    )
 
 
 def test_doc_to_chunks_gives_different_h2_parents_different_parent_ids():
