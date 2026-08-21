@@ -179,6 +179,24 @@ def test_generation_enabled_raises_not_implemented(tmp_path, dataset_dir, gold_i
         )
 
 
+def test_dense_disabled_raises_not_implemented(tmp_path, dataset_dir, gold_index):
+    # dense is the only implemented stage -- disabling it must fail loudly,
+    # not silently keep retrieving as if the config had no effect.
+    cfg = RunConfig(name="t")
+    cfg = cfg.model_copy(
+        update={"retrieval": cfg.retrieval.model_copy(update={"dense": cfg.retrieval.dense.model_copy(update={"enabled": False})})}
+    )
+    with pytest.raises(NotImplementedError, match="dense"):
+        run_experiment(
+            cfg,
+            "c.yaml",
+            runs_root=tmp_path / "runs",
+            eval_sets_dir=dataset_dir,
+            gold_index=gold_index,
+            retrieve_fn=lambda q, c, d: [],
+        )
+
+
 @pytest.mark.parametrize("stage", ["bm25", "rerank", "query_rewrite", "parent_expansion"])
 def test_unimplemented_retrieval_stage_raises(tmp_path, dataset_dir, gold_index, stage):
     cfg = RunConfig(name="t")
