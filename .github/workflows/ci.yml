@@ -30,3 +30,58 @@ jobs:
 
       - name: Test
         run: uv run pytest -m "not slow and not llm" --cov=rag_eval --cov-report=term-missing
+
+  eval-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      # ~130MB ONNX model; downloading it fresh every run would dominate
+      # the job's time -- see docs/plan.md Phase 5's <6min budget.
+      - name: Cache fastembed model
+        uses: actions/cache@v4
+        with:
+          path: data/processed/fastembed
+          key: fastembed-bge-small-en-v1.5-${{ hashFiles('uv.lock') }}
+
+      # Rebuilt from the committed data/corpus/ snapshot rather than caching
+      # a Chroma dir -- deterministic, and it regression-tests ingestion
+      # for free (docs/plan.md Phase 5).
+      - name: Build the index from the committed corpus snapshot
+        run: uv run python -m rag_eval.ingestion.embed_and_store
+
+      # Zero API quota, no Ollama: configs/ci.yaml disables generation and
+      # the judge, and fastembed embeds in-process.
+      - name: Run the eval gate
+        id: gate
+        continue-on-error: true
+        run: uv run rag-eval eval gate --config configs/ci.yaml --summary-out gate_summary.md
+
+      - name: Append to job summary
+        if: always()
+        run: cat gate_summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post sticky PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: eval-gate
+          path: gate_summary.md
+
+      - name: Fail the job if the gate failed
+        if: steps.gate.outcome == 'failure'
+        run: exit 1
