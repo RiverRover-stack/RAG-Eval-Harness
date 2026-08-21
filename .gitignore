@@ -20,3 +20,9 @@ runs/*
 !runs/_pinned/
 !runs/leaderboard.json
 !runs/baseline.json
+
+# Private project knowledge base (see docs/PROJECT.md skill)
+docs/PROJECT.md
+docs/ARCHITECTURE.md
+docs/DECISIONS.md
+docs/EXPERIMENTS.md
