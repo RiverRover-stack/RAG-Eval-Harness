@@ -80,6 +80,25 @@ def get_collection(
                 "created_at": datetime.now(UTC).isoformat(),
             },
         )
+        # get_or_create_collection silently ignores `metadata` once the
+        # collection already exists (its own docstring says so), so without
+        # this a re-embed against an existing collection would keep
+        # reporting the corpus_sha from the collection's *first* creation
+        # forever, defeating the staleness check. modify() replaces
+        # metadata wholesale (verified against chromadb 1.5.9: a partial
+        # modify() silently dropped embedding_model/embedding_dim), so
+        # every existing key has to be carried forward, not just the two
+        # that changed -- except hnsw:space, which chromadb rejects in a
+        # modify() call even when unchanged ("changing the distance
+        # function ... is not supported").
+        stored_sha = (collection.metadata or {}).get("corpus_sha")
+        if corpus_sha is not None and stored_sha != corpus_sha:
+            refreshed = {
+                k: v for k, v in (collection.metadata or {}).items() if k != "hnsw:space"
+            }
+            refreshed["corpus_sha"] = corpus_sha
+            refreshed["created_at"] = datetime.now(UTC).isoformat()
+            collection.modify(metadata=refreshed)
     else:
         collection = client.get_collection(name=name, embedding_function=None)
 

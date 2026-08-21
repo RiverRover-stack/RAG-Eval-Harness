@@ -29,6 +29,29 @@ def test_get_collection_create_writes_embedding_identity_metadata(fake_embedder,
     assert collection.metadata["hnsw:space"] == "cosine"
 
 
+def test_get_collection_create_refreshes_corpus_sha_on_reembed(fake_embedder, ephemeral_collection):
+    # get_or_create_collection ignores `metadata` once the collection
+    # already exists -- corpus_sha/created_at must be refreshed explicitly,
+    # and embedding_model/embedding_dim must survive that refresh.
+    first = get_collection(
+        "docs", fake_embedder, client=ephemeral_collection, create=True, corpus_sha="sha-old"
+    )
+    created_at_first = first.metadata["created_at"]
+
+    second = get_collection(
+        "docs", fake_embedder, client=ephemeral_collection, create=True, corpus_sha="sha-new"
+    )
+
+    assert second.metadata["corpus_sha"] == "sha-new"
+    assert second.metadata["created_at"] != created_at_first
+    assert second.metadata["embedding_model"] == fake_embedder.model
+    assert second.metadata["embedding_dim"] == fake_embedder.dim
+    # hnsw:space itself can't survive a modify() call (chromadb rejects
+    # re-specifying it even unchanged), but the actual distance function is
+    # tracked separately in the collection's configuration, not metadata.
+    assert second.configuration_json["hnsw"]["space"] == "cosine"
+
+
 def test_upsert_then_query_roundtrips_and_computes_cosine_score(fake_embedder, ephemeral_collection):
     upsert_chunks(CHUNKS, "docs", fake_embedder, client=ephemeral_collection, corpus_sha="sha")
 
