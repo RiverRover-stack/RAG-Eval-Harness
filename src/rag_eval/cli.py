@@ -11,6 +11,7 @@ import typer
 
 from rag_eval.config.run_config import load_run_config
 from rag_eval.eval.datasets import DEFAULT_EVAL_SETS_DIR, dataset_path, load_dataset
+from rag_eval.eval.gate import DEFAULT_BASELINE_POINTER, evaluate_gate, load_baseline
 from rag_eval.eval.gold import EvalItem
 from rag_eval.eval.review import CandidateFn, run_label_session, run_review_session
 from rag_eval.eval.runner import run_experiment
@@ -67,6 +68,30 @@ def eval_run(
         mrr = block.get("mrr", 0.0)
         mrr_lo, mrr_hi = cis.get("mrr", (mrr, mrr))
         typer.echo(f"    mrr: {mrr:.3f}  [{mrr_lo:.3f}, {mrr_hi:.3f}]")
+
+
+@eval_app.command("gate")
+def eval_gate_cmd(
+    config: Path = typer.Option(..., "--config", help="path to a RunConfig yaml"),
+    set_: list[str] = typer.Option([], "--set", help="override, e.g. retrieval.top_k=10"),
+    dataset: str = typer.Option("docs_synth_v1", "--dataset", help="dataset to gate on -- see docs/plan.md C3"),
+    baseline_path: Path = typer.Option(DEFAULT_BASELINE_POINTER, "--baseline-path"),
+    runs_root: Path = typer.Option(DEFAULT_RUNS_ROOT, "--runs-root"),
+    summary_out: Path = typer.Option(None, "--summary-out", help="append the markdown table here, e.g. $GITHUB_STEP_SUMMARY"),
+) -> None:
+    cfg = load_run_config(config, overrides=set_)
+    manifest = run_experiment(cfg, config, runs_root=runs_root)
+    baseline = load_baseline(dataset, baseline_path=baseline_path, runs_root=runs_root)
+    result = evaluate_gate(manifest, cfg, dataset=dataset, baseline=baseline)
+
+    md = result.to_markdown()
+    typer.echo(md)
+    if summary_out is not None:
+        with open(summary_out, "a", encoding="utf-8") as f:
+            f.write(md + "\n")
+
+    if result.verdict == "FAIL":
+        raise typer.Exit(code=1)
 
 
 @eval_app.command("review")
