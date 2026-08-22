@@ -1,9 +1,8 @@
 """Orchestrates one eval run: load dataset(s), resolve gold, retrieve,
 score, write the run directory. Retrieval-only for now -- generation
-scoring and anything past dense-only retrieval (bm25, rerank, query
-rewrite, parent expansion) come with the pipeline that implements them
-(docs/plan.md Phase 6/7). Asking for those here fails loudly rather than
-silently falling back to dense.
+scoring comes with Phase 7 (docs/plan.md). Retrieval itself runs the full
+`RetrievalPipeline` (dense, bm25, fusion, rerank, query rewrite, parent
+expansion -- whichever `cfg.retrieval` enables).
 
 Both the corpus-derived gold index and the actual retrieval call are
 injectable, so tests can exercise the whole orchestration with fakes and
@@ -40,13 +39,6 @@ class Candidate(TypedDict):
 
 RetrieveFn = Callable[[str, RunConfig, "set[str]"], list[Candidate]]
 
-_UNIMPLEMENTED_STAGES = (
-    ("bm25", lambda r: r.bm25.enabled),
-    ("rerank", lambda r: r.rerank.enabled),
-    ("query_rewrite", lambda r: r.query_rewrite.enabled),
-    ("parent_expansion", lambda r: r.parent_expansion.enabled),
-)
-
 
 def _check_supported(cfg: RunConfig) -> None:
     if cfg.generation.enabled:
@@ -55,18 +47,6 @@ def _check_supported(cfg: RunConfig) -> None:
         )
     if cfg.eval.self_retrieval == "separate_index":
         raise NotImplementedError("eval.self_retrieval: separate_index isn't built yet")
-    if not cfg.retrieval.dense.enabled:
-        raise NotImplementedError(
-            "retrieval.dense.enabled: false -- dense is the only retrieval stage "
-            "this runner implements, so disabling it leaves nothing to retrieve "
-            "with (docs/plan.md Phase 6 adds bm25/rerank as real alternatives)"
-        )
-    for stage_name, is_enabled in _UNIMPLEMENTED_STAGES:
-        if is_enabled(cfg.retrieval):
-            raise NotImplementedError(
-                f"retrieval.{stage_name}.enabled: only dense retrieval exists so far "
-                "(docs/plan.md Phase 6 adds the rest)"
-            )
 
 
 def build_corpus_gold_index() -> GoldIndex:
@@ -94,33 +74,19 @@ def _combined_corpus_sha() -> str:
 
 
 def _default_retrieve_fn(cfg: RunConfig) -> RetrieveFn:
-    """Dense-only retrieval across every source in cfg.corpus.sources,
-    merged by score (docs/plan.md Phase 6 replaces this with RRF fusion +
-    rerank). deny_ids is handled by over-fetching and filtering in Python --
-    Chroma's query() has no "exclude this id" option."""
-    from rag_eval.providers import get_embedder
-    from rag_eval.rag.vector_store import get_collection
-    from rag_eval.rag.vector_store import query as vector_query
+    """Runs the full `RetrievalPipeline` (dense, bm25, fusion, rerank, query
+    rewrite, parent expansion -- whichever `cfg.retrieval` enables) and
+    flattens its `Candidate` dataclasses down to the runner's own
+    `chunk_id`/`url`/`score` TypedDict, which is all the metrics need."""
+    from rag_eval.retrieval.pipeline import RetrievalPipeline
 
-    embedder = get_embedder(cfg.embedding.provider, cfg.embedding.model)
+    pipeline = RetrievalPipeline.from_config(cfg)
 
     def retrieve(question: str, run_cfg: RunConfig, deny_ids: set[str]) -> list[Candidate]:
-        query_vec = embedder.embed_query(question)
-        wanted = run_cfg.retrieval.candidates_k + len(deny_ids)
-        hits: list[dict] = []
-        for source in run_cfg.corpus.sources:
-            collection = get_collection(source, embedder, create=False)
-            n = min(wanted, collection.count())
-            if n <= 0:
-                continue
-            hits.extend(vector_query(query_vec, source, embedder, k=n))
-        hits.sort(key=lambda h: h["score"], reverse=True)
-        candidates = [
-            Candidate(chunk_id=h["id"], url=h["metadata"].get("url", ""), score=h["score"])
-            for h in hits
-            if h["id"] not in deny_ids
+        result = pipeline.retrieve(question, k=run_cfg.retrieval.candidates_k, deny_ids=deny_ids)
+        return [
+            Candidate(chunk_id=c.chunk_id, url=c.url, score=c.final_score) for c in result.candidates
         ]
-        return candidates[: run_cfg.retrieval.candidates_k]
 
     return retrieve
 

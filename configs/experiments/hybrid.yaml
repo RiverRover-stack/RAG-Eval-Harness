@@ -1,0 +1,6 @@
+name: exp-hybrid
+extends: dense.yaml
+
+retrieval:
+  bm25:
+    enabled: true

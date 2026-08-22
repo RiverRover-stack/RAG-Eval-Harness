@@ -1,10 +1,18 @@
-"""Thin retrieval interface on top of the Chroma vector store."""
+"""Thin retrieval interface on top of the Chroma vector store.
+
+A back-compat wrapper (docs/plan.md Phase 6) over `retrieval.dense.DenseSearcher`
+-- the naive cross-collection score merge this module used to do itself now
+lives there, shared with the full `RetrievalPipeline`. Kept as a plain
+dense-only, no-RunConfig call for callers that just want "the top-k chunks
+for this question" without building a run config.
+"""
 
 from rag_eval.common.schemas import RetrievedChunk
 from rag_eval.providers import get_embedder
 from rag_eval.providers.base import EmbeddingProvider
 from rag_eval.rag.vector_store import DISCUSSIONS_SOURCE, DOCS_SOURCE
 from rag_eval.rag.vector_store import query as vector_query
+from rag_eval.retrieval.dense import DenseSearcher
 
 
 def retrieve(
@@ -15,18 +23,11 @@ def retrieve(
     embedded with the same model into the same cosine space, so their
     scores are directly comparable."""
     embedder = embedder or get_embedder()
-    query_embedding = embedder.embed_query(question)
-
-    hits = vector_query(query_embedding, DISCUSSIONS_SOURCE, embedder, k=k) + vector_query(
-        query_embedding, DOCS_SOURCE, embedder, k=k
+    searcher = DenseSearcher(
+        sources=[DISCUSSIONS_SOURCE, DOCS_SOURCE], embedder=embedder, query_fn=vector_query
     )
-    hits.sort(key=lambda hit: hit["score"], reverse=True)
+    candidates = searcher.search(question, k)
 
     return [
-        RetrievedChunk(
-            content=hit["content"],
-            source_id=hit["metadata"].get("url", ""),
-            score=hit["score"],
-        )
-        for hit in hits[:k]
+        RetrievedChunk(content=c.content, source_id=c.url, score=c.final_score) for c in candidates
     ]
