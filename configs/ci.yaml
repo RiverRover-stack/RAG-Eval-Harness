@@ -1,7 +1,16 @@
 # What the CI gate runs against: no LLM calls anywhere in the loop, so a
 # PR can be scored on zero API quota and no Ollama. See eval/gate.py.
+#
+# bm25 is on: it's built from the already-indexed local Chroma collection
+# (collection.get()), no network call and no model download, so it costs
+# the gate nothing. The reranker stays off for now -- its ONNX model isn't
+# cached by the eval-gate workflow yet, so enabling it would add a ~90MB
+# download to every PR run until that's wired up (docs/plan.md Phase 6).
 name: ci
 extends: _base.yaml
+retrieval:
+  bm25:
+    enabled: true
 generation:
   enabled: false
 eval:
