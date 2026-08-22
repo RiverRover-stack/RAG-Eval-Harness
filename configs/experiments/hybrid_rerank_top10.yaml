@@ -1,0 +1,6 @@
+name: exp-hybrid-rerank-top10
+extends: hybrid_rerank.yaml
+
+retrieval:
+  rerank:
+    top_n: 10

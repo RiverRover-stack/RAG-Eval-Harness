@@ -1,0 +1,6 @@
+name: exp-hybrid-rerank
+extends: hybrid.yaml
+
+retrieval:
+  rerank:
+    enabled: true
