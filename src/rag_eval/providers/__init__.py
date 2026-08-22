@@ -32,6 +32,10 @@ def get_llm(provider: str = DEFAULT_LLM_PROVIDER, model: str = DEFAULT_LLM_MODEL
         from rag_eval.providers.llm.gemini import GeminiLLM
 
         return GeminiLLM(model=model)
+    if provider == 'airforce':
+        from rag_eval.providers.llm.airforce import AirForceLLM
+
+        return AirForceLLM(model=model)
     raise ValueError(f"Unknown LLM provider {provider!r}, expected 'ollama', 'groq', or 'gemini'")
 
 

@@ -1,0 +1,11 @@
+name: exp-hybrid-rerank-hyde
+extends: hybrid_rerank.yaml
+
+retrieval:
+  query_rewrite:
+    enabled: true
+
+generation:
+  llm:
+    provider: airforce
+    model: ministral-14b-latest

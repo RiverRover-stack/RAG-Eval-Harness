@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
 
+    airforce_api_key: str = ""
+
+
     # RAGAS execution: kept conservative for CPU-only local inference, where
     # concurrency just queues jobs behind a single-threaded model instead of
     # speeding anything up. Bump max_workers only if the judge is hosted or
