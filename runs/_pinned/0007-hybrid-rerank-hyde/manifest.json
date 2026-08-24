@@ -1,0 +1,333 @@
+{
+  "collection_names": {
+    "discussions": "fastapi_discussions__bge-small-en-v15",
+    "docs": "fastapi_docs__bge-small-en-v15"
+  },
+  "config": {
+    "corpus": {
+      "snapshot": "data/corpus/SNAPSHOT.json",
+      "sources": [
+        "docs",
+        "discussions"
+      ]
+    },
+    "embedding": {
+      "model": "BAAI/bge-small-en-v1.5",
+      "provider": "fastembed"
+    },
+    "eval": {
+      "datasets": [
+        "docs_synth_v1",
+        "discussions_v2"
+      ],
+      "judge": {
+        "enabled": false,
+        "max_workers": 1,
+        "model": "gemini-2.5-flash",
+        "provider": "gemini"
+      },
+      "k_values": [
+        1,
+        3,
+        5,
+        10
+      ],
+      "self_retrieval": "holdout",
+      "thresholds": {
+        "mrr": {
+          "min": 0.55,
+          "regression_tolerance": 0.02
+        },
+        "ndcg_at_10": {
+          "min": 0.6,
+          "regression_tolerance": 0.02
+        },
+        "recall_at_5": {
+          "min": 0.7,
+          "regression_tolerance": 0.02
+        }
+      }
+    },
+    "generation": {
+      "enabled": false,
+      "groundedness": {
+        "abstain_below": 0.45,
+        "enabled": true,
+        "mode": "embedding_support"
+      },
+      "llm": {
+        "max_tokens": 900,
+        "model": "ministral-14b-latest",
+        "provider": "airforce",
+        "temperature": 0.0
+      },
+      "prompt_version": "v2-cited",
+      "require_citations": true
+    },
+    "name": "exp-hybrid-rerank-hyde",
+    "retrieval": {
+      "bm25": {
+        "b": 0.75,
+        "enabled": true,
+        "k1": 1.2
+      },
+      "candidates_k": 30,
+      "dense": {
+        "enabled": true
+      },
+      "fusion": {
+        "method": "rrf",
+        "rrf_k": 60
+      },
+      "parent_expansion": {
+        "enabled": false,
+        "max_tokens": 1200,
+        "mode": "section"
+      },
+      "per_source_caps": {
+        "discussions": 2,
+        "docs": 4
+      },
+      "query_rewrite": {
+        "enabled": true,
+        "mode": "hyde",
+        "n": 1
+      },
+      "rerank": {
+        "enabled": true,
+        "model": "Xenova/ms-marco-MiniLM-L-6-v2",
+        "top_n": 5
+      },
+      "top_k": 5
+    }
+  },
+  "config_hash": "898ac92e9908",
+  "config_path": "configs\\experiments\\hybrid_rerank_hyde.yaml",
+  "corpus_sha": "7063bbee46c0",
+  "cost": null,
+  "created_at": "2026-08-23T20:22:13.101502+00:00",
+  "dataset_shas": {
+    "discussions_v2": "03f1186330bd86691ef5ec849367f09441d2053067642c97946bcac0fef04446",
+    "docs_synth_v1": "7aac86a9b05640f8cb9d3042badc9274393a55c60c05e0972b1d29ac6ccf13a1"
+  },
+  "generation_hash": "44214a051415",
+  "git_dirty": true,
+  "git_sha": "53fd28b90712c52c3866dc80e82c9600f33de953",
+  "metrics": {
+    "discussions_v2": {
+      "cis": {
+        "hit_rate_at_1": [
+          0.0,
+          0.42857142857142855
+        ],
+        "hit_rate_at_10": [
+          0.5714285714285714,
+          1.0
+        ],
+        "hit_rate_at_3": [
+          0.42857142857142855,
+          1.0
+        ],
+        "hit_rate_at_5": [
+          0.5714285714285714,
+          1.0
+        ],
+        "mrr": [
+          0.20238095238095236,
+          0.6071428571428571
+        ],
+        "ndcg_at_1": [
+          0.0,
+          0.42857142857142855
+        ],
+        "ndcg_at_10": [
+          0.13971700484759725,
+          0.5519253733166897
+        ],
+        "ndcg_at_3": [
+          0.10055972700487638,
+          0.529131155576305
+        ],
+        "ndcg_at_5": [
+          0.13971700484759725,
+          0.5519253733166897
+        ],
+        "precision_at_1": [
+          0.0,
+          0.42857142857142855
+        ],
+        "precision_at_10": [
+          0.1142857142857143,
+          0.2
+        ],
+        "precision_at_3": [
+          0.14285714285714285,
+          0.3333333333333333
+        ],
+        "precision_at_5": [
+          0.1142857142857143,
+          0.2
+        ],
+        "recall_at_1": [
+          0.0,
+          0.42857142857142855
+        ],
+        "recall_at_10": [
+          0.19285714285714287,
+          0.6119047619047618
+        ],
+        "recall_at_3": [
+          0.10476190476190476,
+          0.5523809523809524
+        ],
+        "recall_at_5": [
+          0.19285714285714287,
+          0.6119047619047618
+        ]
+      },
+      "hit_rate_at_k": {
+        "1": 0.14285714285714285,
+        "3": 0.7142857142857143,
+        "5": 0.8571428571428571,
+        "10": 0.8571428571428571
+      },
+      "k_values": [
+        1,
+        3,
+        5,
+        10
+      ],
+      "mrr": 0.39285714285714285,
+      "n": 7,
+      "ndcg_at_k": {
+        "1": 0.14285714285714285,
+        "3": 0.2986815566098109,
+        "5": 0.32147577435019564,
+        "10": 0.32147577435019564
+      },
+      "precision_at_k": {
+        "1": 0.14285714285714285,
+        "3": 0.23809523809523808,
+        "5": 0.17142857142857146,
+        "10": 0.17142857142857146
+      },
+      "recall_at_k": {
+        "1": 0.14285714285714285,
+        "3": 0.3261904761904762,
+        "5": 0.3976190476190476,
+        "10": 0.3976190476190476
+      }
+    },
+    "docs_synth_v1": {
+      "cis": {
+        "hit_rate_at_1": [
+          0.6071428571428571,
+          0.8392857142857143
+        ],
+        "hit_rate_at_10": [
+          0.7321428571428571,
+          0.9285714285714286
+        ],
+        "hit_rate_at_3": [
+          0.7142857142857143,
+          0.9107142857142857
+        ],
+        "hit_rate_at_5": [
+          0.7321428571428571,
+          0.9285714285714286
+        ],
+        "mrr": [
+          0.6785714285714286,
+          0.8794642857142857
+        ],
+        "ndcg_at_1": [
+          0.6071428571428571,
+          0.8392857142857143
+        ],
+        "ndcg_at_10": [
+          0.5847983472691068,
+          0.7826418896492564
+        ],
+        "ndcg_at_3": [
+          0.605646570628254,
+          0.8007282910015254
+        ],
+        "ndcg_at_5": [
+          0.59952994254658,
+          0.7959296448907096
+        ],
+        "precision_at_1": [
+          0.6071428571428571,
+          0.8392857142857143
+        ],
+        "precision_at_10": [
+          0.17142857142857146,
+          0.23571428571428574
+        ],
+        "precision_at_3": [
+          0.26785714285714285,
+          0.375
+        ],
+        "precision_at_5": [
+          0.17142857142857146,
+          0.23571428571428574
+        ],
+        "recall_at_1": [
+          0.44345238095238093,
+          0.6686507936507936
+        ],
+        "recall_at_10": [
+          0.5843253968253969,
+          0.7946428571428571
+        ],
+        "recall_at_3": [
+          0.5694444444444444,
+          0.7807539682539683
+        ],
+        "recall_at_5": [
+          0.5843253968253969,
+          0.7946428571428571
+        ]
+      },
+      "hit_rate_at_k": {
+        "1": 0.7321428571428571,
+        "3": 0.8214285714285714,
+        "5": 0.8392857142857143,
+        "10": 0.8392857142857143
+      },
+      "k_values": [
+        1,
+        3,
+        5,
+        10
+      ],
+      "mrr": 0.78125,
+      "n": 56,
+      "ndcg_at_k": {
+        "1": 0.7321428571428571,
+        "3": 0.7007192052977362,
+        "5": 0.6944116311547922,
+        "10": 0.6801097428491859
+      },
+      "precision_at_k": {
+        "1": 0.7321428571428571,
+        "3": 0.32142857142857145,
+        "5": 0.20357142857142857,
+        "10": 0.20357142857142857
+      },
+      "recall_at_k": {
+        "1": 0.5515873015873016,
+        "3": 0.6696428571428571,
+        "5": 0.6865079365079365,
+        "10": 0.6865079365079365
+      }
+    }
+  },
+  "name": "exp-hybrid-rerank-hyde",
+  "retrieval_hash": "80d44c8552bd",
+  "run_id": "2026-08-23T20-22-12Z__exp-hybrid-rerank-hyde__898ac9",
+  "timings": {
+    "items": 64,
+    "total_seconds": 7475.931871500041
+  }
+}
