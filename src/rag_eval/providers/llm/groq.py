@@ -23,7 +23,7 @@ _BASE_BACKOFF_SECONDS = 2.0
 class GroqLLM:
     name = "groq"
 
-    def __init__(self, model: str = "llama-3.3-70b-versatile", api_key: str | None = None) -> None:
+    def __init__(self, model: str = "openai/gpt-oss-120b", api_key: str | None = None) -> None:
         self.model = model
         self._api_key = settings.groq_api_key if api_key is None else api_key
         if not self._api_key:

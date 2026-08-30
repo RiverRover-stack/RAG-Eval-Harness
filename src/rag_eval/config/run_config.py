@@ -86,7 +86,11 @@ class RetrievalConfig(_Strict):
 
 class LLMConfig(_Strict):
     provider: str = "groq"
-    model: str = "llama-3.3-70b-versatile"
+    # llama-3.3-70b-versatile moved to Enterprise-only "Contact Sales"
+    # pricing on Groq as of 2026-08-26 and was withdrawn from the self-serve
+    # rate card -- gpt-oss-120b is the closest-tier model still on Groq's
+    # public per-token pricing ($0.15/$0.60 per 1M tokens).
+    model: str = "openai/gpt-oss-120b"
     temperature: float = 0.0
     max_tokens: int = 900
 
