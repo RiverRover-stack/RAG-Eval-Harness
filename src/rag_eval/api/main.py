@@ -1,90 +1,66 @@
-"""FastAPI app exposing the RAG pipeline, plus the built static frontend.
+"""FastAPI app factory (docs/plan.md Phase 7), plus the built static frontend.
 
 The frontend is `deploy/web-placeholder/` until Phase 9's Next.js export
-replaces it (docs/plan.md). `StaticFiles` is mounted at "/" *last*, after
-`/health` and the `/api` router are registered, so route order doesn't let
-the catch-all static mount shadow the API -- see test_static_mount.py.
+replaces it. `StaticFiles` is mounted at "/" *last*, after `/health` and
+the `/api` router are registered, so route order doesn't let the catch-all
+static mount shadow the API -- see test_static_mount.py.
+
+The RAG backend (RunConfig -> RetrievalPipeline -> LLM/embedder/prompt,
+api/deps.py) is built once in `lifespan`, not per-request, and warms the
+embedder, reranker, and BM25 index at startup. Building it can fail (no
+baked index yet, no LLM API key locally) -- that's swallowed here so the
+container still comes up and `/api/health/ready` can report why, rather
+than the whole app failing to start.
 """
 
+import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
-from rag_eval.providers import get_embedder, get_llm
-from rag_eval.rag.pipeline import answer_question
-from rag_eval.rag.vector_store import DISCUSSIONS_SOURCE, DOCS_SOURCE, get_collection
+from rag_eval.api.deps import build_app_state
+from rag_eval.api.routes import ask, eval, health
+from rag_eval.common.config import settings
 
-# Until Phase 4's RunConfig makes the serving LLM a yaml value (docs/plan.md
-# C1), the deploy container picks it via plain env vars rather than a
-# Settings field -- Settings is reserved for things that cannot change a
-# metric, and a Groq-vs-Ollama switch plainly can. Local dev (`make serve`)
-# gets Ollama by default; the Docker image sets these explicitly.
-SERVE_LLM_PROVIDER = os.getenv("RAG_LLM_PROVIDER", "ollama")
-SERVE_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "fdm-llama")
+logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(os.getenv("STATIC_DIR", "deploy/web-placeholder"))
 
-app = FastAPI(title="RAG Eval Harness API")
-api_router = APIRouter(prefix="/api")
 
-
-class AskRequest(BaseModel):
-    question: str
-    k: int = 5
-
-
-class AskResponse(BaseModel):
-    question: str
-    answer: str
-    contexts: list[str]
-    sources: list[str]
-
-
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
-
-
-@api_router.get("/health")
-def api_health() -> dict:
-    return {"status": "ok"}
-
-
-@api_router.get("/health/ready")
-def health_ready() -> dict:
-    """Fails loudly if the baked index is missing, empty, or embedded with
-    a different model than the running embedder expects -- the Phase 3
-    runtime guard (docs/plan.md): a cold container should 503, not silently
-    serve empty retrievals."""
-    embedder = get_embedder()
-    problems: list[str] = []
-    for source in (DOCS_SOURCE, DISCUSSIONS_SOURCE):
-        try:
-            collection = get_collection(source, embedder, create=False)
-        except Exception as e:  # noqa: BLE001 - surfaced as a readiness detail, not swallowed
-            problems.append(f"{source}: {e}")
-            continue
-        if collection.count() == 0:
-            problems.append(f"{source}: collection is empty")
-    if problems:
-        raise HTTPException(status_code=503, detail={"ready": False, "problems": problems})
-    return {"ready": True}
-
-
-@api_router.post("/ask", response_model=AskResponse)
-def ask(req: AskRequest) -> AskResponse:
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    config_path = os.getenv("RAG_CONFIG_PATH", settings.default_run_config)
     try:
-        llm = get_llm(SERVE_LLM_PROVIDER, SERVE_LLM_MODEL)
-        result = answer_question(req.question, k=req.k, llm=llm)
-    except ConnectionError as e:
-        raise HTTPException(status_code=503, detail=f"RAG backend unavailable: {e}") from e
-    return AskResponse(**result)
+        app.state.rag = build_app_state(config_path)
+    except Exception:
+        logger.exception(
+            "RAG backend failed to initialize from %s -- serving degraded until fixed "
+            "(see /api/health/ready)",
+            config_path,
+        )
+        app.state.rag = None
+    yield
 
 
-app.include_router(api_router)
+def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
+    app = FastAPI(title="RAG Eval Harness API", lifespan=lifespan)
 
-if STATIC_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.include_router(health.bare_router)
+
+    api_router = APIRouter(prefix="/api")
+    api_router.include_router(health.router)
+    api_router.include_router(ask.router)
+    api_router.include_router(eval.router)
+    app.include_router(api_router)
+
+    if static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+
+    return app
+
+
+app = create_app()

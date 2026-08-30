@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 DEFAULT_LOG_DIR = Path("runs/serve")
@@ -92,3 +92,46 @@ def log_request(
     with log_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
     return log_path
+
+
+@dataclass(frozen=True)
+class Stats:
+    request_count: int
+    priced_request_count: int
+    total_cost_usd: float
+    p50_latency_ms: float | None
+    p95_latency_ms: float | None
+
+
+def _percentile(sorted_values: list[float], p: float) -> float | None:
+    if not sorted_values:
+        return None
+    index = min(len(sorted_values) - 1, int(len(sorted_values) * p))
+    return sorted_values[index]
+
+
+def read_stats(*, log_dir: Path = DEFAULT_LOG_DIR, days: int = 7, now: datetime | None = None) -> Stats:
+    """Aggregate the last `days` days of request logs for `GET /api/stats`.
+    Missing days (no traffic yet, or a fresh deploy) are simply skipped --
+    an empty log directory yields a Stats with zero counts and no
+    percentiles, not an error."""
+    now = now or datetime.now(UTC)
+    rows: list[dict] = []
+    for offset in range(days):
+        day = now - timedelta(days=offset)
+        log_path = log_dir / f"requests-{day:%Y-%m-%d}.jsonl"
+        if not log_path.exists():
+            continue
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+
+    latencies = sorted(row["latency_ms"] for row in rows)
+    costs = [row["cost_usd"] for row in rows if row.get("cost_usd") is not None]
+    return Stats(
+        request_count=len(rows),
+        priced_request_count=len(costs),
+        total_cost_usd=sum(costs),
+        p50_latency_ms=_percentile(latencies, 0.50),
+        p95_latency_ms=_percentile(latencies, 0.95),
+    )
