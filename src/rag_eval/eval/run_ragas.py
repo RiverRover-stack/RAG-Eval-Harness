@@ -60,7 +60,7 @@ def score(dataset: Dataset):
         max_workers=settings.ragas_max_workers,
         timeout=settings.ragas_timeout,
     )
-    answer_relevancy.strictness = 1
+    answer_relevancy.strictness = 3
     return evaluate(
         dataset,
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],

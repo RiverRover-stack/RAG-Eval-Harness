@@ -70,6 +70,32 @@ def eval_run(
         typer.echo(f"    mrr: {mrr:.3f}  [{mrr_lo:.3f}, {mrr_hi:.3f}]")
 
 
+@eval_app.command("judge")
+def eval_judge_cmd(
+    run_id: str = typer.Argument(..., help="run id (or path) under runs/ -- needs generation.jsonl"),
+    runs_root: Path = typer.Option(DEFAULT_RUNS_ROOT, "--runs-root"),
+    export_only: bool = typer.Option(
+        False, "--export-only", help="write judge_export.jsonl (portable, no scores) and stop"
+    ),
+    score_only: Path = typer.Option(
+        None, "--score-only", help="merge a Kaggle-produced scored .csv/.jsonl back in, no judge call"
+    ),
+    judge_provider: str = typer.Option(None, "--judge-provider", help="override eval.judge.provider"),
+    judge_model: str = typer.Option(None, "--judge-model", help="override eval.judge.model"),
+) -> None:
+    from rag_eval.eval.judge import judge_run
+
+    path = judge_run(
+        run_id,
+        runs_root=runs_root,
+        export_only=export_only,
+        score_only=score_only,
+        provider_override=judge_provider,
+        model_override=judge_model,
+    )
+    typer.echo(f"wrote {path}")
+
+
 @eval_app.command("gate")
 def eval_gate_cmd(
     config: Path = typer.Option(..., "--config", help="path to a RunConfig yaml"),
