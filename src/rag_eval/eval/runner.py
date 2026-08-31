@@ -1,8 +1,11 @@
 """Orchestrates one eval run: load dataset(s), resolve gold, retrieve,
-score, write the run directory. Retrieval-only for now -- generation
-scoring comes with Phase 7 (docs/plan.md). Retrieval itself runs the full
+score, write the run directory. Retrieval itself runs the full
 `RetrievalPipeline` (dense, bm25, fusion, rerank, query rewrite, parent
 expansion -- whichever `cfg.retrieval` enables).
+
+When `cfg.generation.enabled`, a second, strictly separate pass writes
+`generation.jsonl` (docs/plan.md Phase 8) via `eval/generate.py` -- the
+retrieval metrics above never invoke the generator (C2, mechanism 1).
 
 Both the corpus-derived gold index and the actual retrieval call are
 injectable, so tests can exercise the whole orchestration with fakes and
@@ -19,6 +22,7 @@ from typing import TypedDict
 
 from rag_eval.config.run_config import RunConfig
 from rag_eval.eval.datasets import DEFAULT_EVAL_SETS_DIR, dataset_sha256, load_dataset
+from rag_eval.eval.generate import GenerateFn, generate_over_datasets
 from rag_eval.eval.gold import EvalItem, GoldIndex, resolve_gold_chunks
 from rag_eval.eval.retrieval_metrics import (
     aggregate,
@@ -41,10 +45,6 @@ RetrieveFn = Callable[[str, RunConfig, "set[str]"], list[Candidate]]
 
 
 def _check_supported(cfg: RunConfig) -> None:
-    if cfg.generation.enabled:
-        raise NotImplementedError(
-            "generation scoring isn't wired into the runner yet -- set generation.enabled: false"
-        )
     if cfg.eval.self_retrieval == "separate_index":
         raise NotImplementedError("eval.self_retrieval: separate_index isn't built yet")
 
@@ -113,6 +113,7 @@ def run_experiment(
     eval_sets_dir: Path = DEFAULT_EVAL_SETS_DIR,
     gold_index: GoldIndex | None = None,
     retrieve_fn: RetrieveFn | None = None,
+    generate_fn: GenerateFn | None = None,
     corpus_sha: str | None = None,
 ) -> RunManifest:
     _check_supported(cfg)
@@ -130,6 +131,7 @@ def run_experiment(
     metrics_by_dataset: dict[str, dict] = {}
     dataset_shas: dict[str, str] = {}
     retrieval_rows: list[dict] = []
+    items_by_dataset: dict[str, list[EvalItem]] = {}
     started = time.perf_counter()
 
     for dataset_name in cfg.eval.datasets:
@@ -139,6 +141,7 @@ def run_experiment(
         # excluded here rather than left to silently drag the number down.
         # Unreviewed items (verified is None) are scored provisionally.
         raw_items = [item for item in load_dataset(dataset_name, eval_sets_dir) if item.verified != "no"]
+        items_by_dataset[dataset_name] = raw_items
         dataset_shas[dataset_name] = dataset_sha256(dataset_name, eval_sets_dir)
 
         per_item_for_agg: list[tuple[Sequence[str], set[str]]] = []
@@ -169,17 +172,27 @@ def run_experiment(
     elapsed = time.perf_counter() - started
 
     run_dir = new_run(cfg, config_path, runs_root=runs_root)
-    with open(run_dir / "retrieval.jsonl", "w", encoding="utf-8") as f:
-        import json
+    import json
 
+    with open(run_dir / "retrieval.jsonl", "w", encoding="utf-8") as f:
         f.writelines(json.dumps(row) + "\n" for row in retrieval_rows)
+
+    timings = {"total_seconds": elapsed, "items": len(retrieval_rows)}
+
+    if cfg.generation.enabled:
+        gen_started = time.perf_counter()
+        generation_rows = generate_over_datasets(cfg, items_by_dataset, generate_fn)
+        with open(run_dir / "generation.jsonl", "w", encoding="utf-8") as f:
+            f.writelines(json.dumps(row) + "\n" for row in generation_rows)
+        timings["generation_seconds"] = time.perf_counter() - gen_started
+        timings["generation_items"] = len(generation_rows)
 
     manifest = write_manifest(
         run_dir,
         cfg,
         config_path,
         metrics=metrics_by_dataset,
-        timings={"total_seconds": elapsed, "items": len(retrieval_rows)},
+        timings=timings,
         corpus_sha=corpus_sha if corpus_sha is not None else _combined_corpus_sha(),
         collection_names=collection_names,
         dataset_shas=dataset_shas,

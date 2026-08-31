@@ -165,20 +165,6 @@ def test_self_retrieval_none_ignores_exclude_ids(tmp_path, dataset_dir, gold_ind
     assert seen_deny_ids == [set()]
 
 
-def test_generation_enabled_raises_not_implemented(tmp_path, dataset_dir, gold_index):
-    cfg = RunConfig(name="t")
-    cfg = cfg.model_copy(update={"generation": cfg.generation.model_copy(update={"enabled": True})})
-    with pytest.raises(NotImplementedError, match="generation"):
-        run_experiment(
-            cfg,
-            "c.yaml",
-            runs_root=tmp_path / "runs",
-            eval_sets_dir=dataset_dir,
-            gold_index=gold_index,
-            retrieve_fn=lambda q, c, d: [],
-        )
-
-
 def test_separate_index_self_retrieval_raises(tmp_path, dataset_dir, gold_index):
     cfg = _cfg(datasets=["d"], self_retrieval="separate_index")
     with pytest.raises(NotImplementedError, match="separate_index"):
