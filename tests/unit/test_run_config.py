@@ -133,3 +133,21 @@ def test_split_hashes_isolates_retrieval_from_generation(tmp_path, base_yaml):
     assert r_g == base_g
     assert g_g != base_g
     assert g_r == base_r
+
+
+def test_shipped_experiment_configs_all_load():
+    from pathlib import Path
+
+    for path in sorted(Path("configs/experiments").glob("*.yaml")):
+        load_run_config(path)
+
+
+def test_generation_ab_configs_differ_in_exactly_the_generator():
+    ollama = load_run_config("configs/experiments/gen_hybrid_ollama.yaml")
+    groq = load_run_config("configs/experiments/gen_hybrid_groq.yaml")
+
+    o_r, o_g = split_hashes(ollama)
+    g_r, g_g = split_hashes(groq)
+    assert o_r == g_r  # identical retrieval
+    assert o_g != g_g  # only the generator moved
+    assert (ollama.generation.llm.provider, groq.generation.llm.provider) == ("ollama", "groq")

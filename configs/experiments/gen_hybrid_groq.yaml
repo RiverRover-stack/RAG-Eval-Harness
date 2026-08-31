@@ -1,0 +1,10 @@
+# Generation A/B, arm 2: the hosted generator. Differs from gen_hybrid_ollama
+# in exactly one field -- generation.llm -- so compare_runs() stays a clean
+# generator-only delta (docs/plan.md C2, mechanism 4).
+name: exp-gen-groq
+extends: gen_hybrid_ollama.yaml
+
+generation:
+  llm:
+    provider: groq
+    model: openai/gpt-oss-120b
