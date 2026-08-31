@@ -60,5 +60,10 @@ class Settings(BaseSettings):
     # it lives here rather than inside the RunConfig it points at.
     default_run_config: str = "configs/deploy.yaml"
 
+    # Daily spend cap on /api/ask* (api/rate_limit.py) -- a public demo on a
+    # real API key gets scraped; this is an operational safety valve, not
+    # anything that changes a retrieval/generation metric.
+    daily_budget_usd: float = 5.0
+
 
 settings = Settings()

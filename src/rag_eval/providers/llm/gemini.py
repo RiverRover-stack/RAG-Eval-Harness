@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import httpx
 
 from rag_eval.common.config import settings
-from rag_eval.providers.base import LLMResponse
+from rag_eval.providers.base import LLMResponse, StreamChunk
 
 _API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -66,3 +68,18 @@ class GeminiLLM:
             prompt_tokens=usage.get("promptTokenCount"),
             completion_tokens=usage.get("candidatesTokenCount"),
         )
+
+    async def astream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[StreamChunk]:
+        # Gemini is the fallback provider, not the serving hot path -- not
+        # worth its own SSE (`alt=sse`) parser until something actually
+        # streams through it (docs/plan.md scoped Phase 7 streaming to
+        # Groq + Ollama). Raise loudly rather than silently degrading to a
+        # single big non-streamed chunk.
+        raise NotImplementedError("GeminiLLM.astream is not implemented yet")
+        yield  # pragma: no cover -- makes this an async generator for typing

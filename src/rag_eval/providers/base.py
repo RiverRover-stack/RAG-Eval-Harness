@@ -1,13 +1,17 @@
 """Provider protocols shared by every LLM/embedding backend.
 
-`LLMProvider` implements `complete()` only for now -- `astream` is added in
-Phase 7 (docs/plan.md) once SSE gives it a real consumer and
-`test_ask_stream.py` gives it a test. Adding it earlier would mean ~60 lines
-of streaming code with nothing exercising it for two phases.
+`astream` lands here in Phase 7 (docs/plan.md) now that SSE gives it a real
+consumer (api/routes/ask.py's /api/ask/stream). Implemented for Groq (SSE)
+and Ollama (NDJSON, not SSE -- a real framing difference, not a typo) since
+those are the serving default and the local-dev backend; Gemini and
+AirForce raise NotImplementedError rather than silently falling back to
+non-streaming, since a caller asking a fallback-only provider to stream
+should find out loudly, not get a single big chunk pretending to be one.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -16,6 +20,14 @@ from typing import Protocol
 class LLMResponse:
     content: str
     model: str
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class StreamChunk:
+    delta: str
+    done: bool = False
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
 
@@ -31,6 +43,14 @@ class LLMProvider(Protocol):
         temperature: float = 0.0,
         max_tokens: int = 1024,
     ) -> LLMResponse: ...
+
+    def astream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[StreamChunk]: ...
 
 
 class EmbeddingProvider(Protocol):

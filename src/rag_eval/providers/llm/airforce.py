@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 
 import httpx
 
 from rag_eval.common.config import settings
-from rag_eval.providers.base import LLMResponse
+from rag_eval.providers.base import LLMResponse, StreamChunk
 
 _API_URL = "https://api.airforce/v1/chat/completions"
 
@@ -52,6 +53,19 @@ class AirForceLLM:
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
         )
+
+    async def astream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+    ) -> AsyncIterator[StreamChunk]:
+        # This provider is an eval-time-only fallback (1 req/minute, see
+        # _MIN_REQUEST_INTERVAL_SECONDS), never the serving path -- raise
+        # loudly rather than silently degrading to one big chunk.
+        raise NotImplementedError("AirForceLLM.astream is not implemented yet")
+        yield  # pragma: no cover -- makes this an async generator for typing
 
     def _throttle(self) -> None:
         if self._last_request_at is not None:
