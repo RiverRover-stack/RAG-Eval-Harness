@@ -9,6 +9,13 @@ list or an embedder to score groundedness against.
 `generate_cited_answer` is the Phase 7 path api/routes/ask.py uses: a
 versioned, citation-forcing PromptTemplate against retrieval's own
 `Candidate` shape, scored for citation validity and embedding groundedness.
+
+`score_answer` is that scoring step pulled out on its own so
+api/routes/ask.py's streaming route can call it after assembling a
+streamed answer from `astream()` deltas -- sentence-level groundedness
+needs the whole answer, so it can only run once the stream is done, but it
+needs the exact same citation/groundedness/abstention logic as the
+non-streaming path.
 """
 
 from __future__ import annotations
@@ -60,6 +67,29 @@ class GenerationResult:
     completion_tokens: int | None
 
 
+def score_answer(
+    answer: str,
+    candidates: list[Candidate],
+    embedder: EmbeddingProvider,
+    abstain_below: float,
+) -> tuple[CitationReport, float, bool]:
+    """(citations, groundedness, abstained). An INSUFFICIENT_CONTEXT answer
+    short-circuits straight to `abstained=True` -- it's already an honest
+    abstention, not something citation/groundedness scoring should
+    second-guess. Otherwise abstention is decided post-hoc: a
+    confidently-worded answer with low embedding support against what was
+    actually retrieved abstains anyway."""
+    if answer.strip().startswith(INSUFFICIENT_CONTEXT_PREFIX):
+        return (
+            CitationReport(citations=[], unknown_indices=[], uncited_sentences=[], coverage=0.0),
+            0.0,
+            True,
+        )
+    citations = validate_citations(answer, candidates)
+    score = groundedness_score(sentence_support(answer, candidates, embedder))
+    return citations, score, should_abstain(score, abstain_below)
+
+
 def generate_cited_answer(
     question: str,
     candidates: list[Candidate],
@@ -71,12 +101,7 @@ def generate_cited_answer(
     temperature: float = 0.0,
     max_tokens: int = 900,
 ) -> GenerationResult:
-    """Build `prompt` against `candidates`, call the LLM, and score the
-    result. An INSUFFICIENT_CONTEXT answer short-circuits straight to
-    `abstained=True` -- it's already an honest abstention, not something
-    citation/groundedness scoring should second-guess. Otherwise abstention
-    is decided post-hoc: a confidently-worded answer with low embedding
-    support against what was actually retrieved abstains anyway."""
+    """Build `prompt` against `candidates`, call the LLM, and score the result."""
     response = llm.complete(
         [
             {"role": "system", "content": prompt.system_prompt},
@@ -86,24 +111,12 @@ def generate_cited_answer(
         max_tokens=max_tokens,
     )
     answer = response.content
-
-    if answer.strip().startswith(INSUFFICIENT_CONTEXT_PREFIX):
-        return GenerationResult(
-            answer=answer,
-            citations=CitationReport(citations=[], unknown_indices=[], uncited_sentences=[], coverage=0.0),
-            groundedness=0.0,
-            abstained=True,
-            prompt_tokens=response.prompt_tokens,
-            completion_tokens=response.completion_tokens,
-        )
-
-    citations = validate_citations(answer, candidates)
-    score = groundedness_score(sentence_support(answer, candidates, embedder))
+    citations, score, abstained = score_answer(answer, candidates, embedder, abstain_below)
     return GenerationResult(
         answer=answer,
         citations=citations,
         groundedness=score,
-        abstained=should_abstain(score, abstain_below),
+        abstained=abstained,
         prompt_tokens=response.prompt_tokens,
         completion_tokens=response.completion_tokens,
     )

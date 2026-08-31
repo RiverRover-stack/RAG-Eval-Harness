@@ -4,18 +4,39 @@ so no real Chroma collection, embedder, or LLM is touched (docs/plan.md's
 constructor-injection-over-patching preference, adapted to FastAPI's own
 override mechanism since routes pull the backend through `Depends`, not a
 direct constructor call).
+
+`rate_limit`/`check_daily_budget` are bypassed for every test in this file
+by the autouse fixture below -- they share one process-global limiter
+(api/rate_limit.py) across the whole test session, so leaving them live
+here would make an unrelated test's pass/fail depend on how many other
+tests already hit /api/ask* first. test_ask_returns_429_when_rate_limited
+and test_ask_returns_402_when_daily_budget_exhausted below prove those
+dependencies are actually attached to the router, without needing 10 real
+requests to do it.
 """
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from rag_eval.api.deps import AppState, get_app_state
 from rag_eval.api.main import app
+from rag_eval.api.rate_limit import check_daily_budget, rate_limit
 from rag_eval.config.run_config import RunConfig
 from rag_eval.providers.base import LLMResponse
 from rag_eval.rag.prompts import PROMPTS
 from rag_eval.retrieval.base import Candidate, RetrievalResult
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _bypass_rate_limit_and_budget():
+    app.dependency_overrides[rate_limit] = lambda: None
+    app.dependency_overrides[check_daily_budget] = lambda: None
+    yield
+    app.dependency_overrides.pop(rate_limit, None)
+    app.dependency_overrides.pop(check_daily_budget, None)
 
 
 class FakePipeline:
@@ -135,3 +156,37 @@ def test_runs_endpoint_returns_a_list():
 def test_run_detail_404s_for_unknown_run():
     resp = client.get("/api/runs/does-not-exist")
     assert resp.status_code == 404
+
+
+def test_ask_returns_429_when_rate_limited(fake_embedder):
+    def _raise_429():
+        raise HTTPException(status_code=429, detail="rate limited")
+
+    pipeline = FakePipeline([_candidate("a", "content", "https://x/a")])
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        pipeline, FakeLLM("answer"), fake_embedder
+    )
+    app.dependency_overrides[rate_limit] = _raise_429
+    try:
+        resp = client.post("/api/ask", json={"question": "hi"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 429
+
+
+def test_ask_returns_402_when_daily_budget_exhausted(fake_embedder):
+    def _raise_402():
+        raise HTTPException(status_code=402, detail="budget exhausted")
+
+    pipeline = FakePipeline([_candidate("a", "content", "https://x/a")])
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        pipeline, FakeLLM("answer"), fake_embedder
+    )
+    app.dependency_overrides[check_daily_budget] = _raise_402
+    try:
+        resp = client.post("/api/ask", json={"question": "hi"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 402
