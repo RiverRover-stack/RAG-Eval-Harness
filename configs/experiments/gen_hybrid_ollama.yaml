@@ -1,0 +1,17 @@
+# Generation A/B, arm 1: the weak CPU-local generator (docs/plan.md Phase 8
+# Verify -- "judge two runs differing only in generator"). Retrieval is the
+# pinned hybrid+rerank config; only generation.llm differs from gen_hybrid_groq.
+name: exp-gen-ollama
+extends: hybrid_rerank.yaml
+
+generation:
+  enabled: true
+  llm:
+    provider: ollama
+    model: fdm-llama
+
+eval:
+  # discussions_gen_v1: answer quality / faithfulness only, own chunk excluded.
+  datasets: [discussions_gen_v1]
+  judge:
+    enabled: true

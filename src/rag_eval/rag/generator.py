@@ -1,10 +1,12 @@
 """Answer generation via the LLM provider layer, grounded in retrieved chunks.
 
 `generate_answer` is the pre-Phase-7 uncited path: it still backs
-rag/pipeline.py and the legacy RAGAS runner (eval/run_ragas.py, not yet
-folded into eval/judge.py per docs/plan.md Phase 8), so it's kept exactly as
-it was rather than adapted -- neither of those callers has a gold chunk_id
-list or an embedder to score groundedness against.
+rag/pipeline.py and the legacy pipeline-coupled RAGAS runner
+(eval/run_ragas.py -- the artifact-driven judge is eval/judge.py as of
+Phase 8, but run_ragas.py stays as the local pipeline+score convenience),
+so it's kept exactly as it was rather than adapted -- neither of those
+callers has a gold chunk_id list or an embedder to score groundedness
+against.
 
 `generate_cited_answer` is the Phase 7 path api/routes/ask.py uses: a
 versioned, citation-forcing PromptTemplate against retrieval's own
