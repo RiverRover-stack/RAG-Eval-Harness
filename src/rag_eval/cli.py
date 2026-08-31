@@ -96,6 +96,24 @@ def eval_judge_cmd(
     typer.echo(f"wrote {path}")
 
 
+@eval_app.command("rubric")
+def eval_rubric_cmd(
+    run_id: str = typer.Argument(..., help="run id (or path) under runs/ -- needs generation.jsonl"),
+    runs_root: Path = typer.Option(DEFAULT_RUNS_ROOT, "--runs-root"),
+    judge_provider: str = typer.Option(None, "--judge-provider", help="override eval.judge.provider"),
+    judge_model: str = typer.Option(None, "--judge-model", help="override eval.judge.model"),
+) -> None:
+    from rag_eval.eval.rubric import rubric_run
+
+    path = rubric_run(
+        run_id,
+        runs_root=runs_root,
+        provider_override=judge_provider,
+        model_override=judge_model,
+    )
+    typer.echo(f"wrote {path}")
+
+
 @eval_app.command("gate")
 def eval_gate_cmd(
     config: Path = typer.Option(..., "--config", help="path to a RunConfig yaml"),
