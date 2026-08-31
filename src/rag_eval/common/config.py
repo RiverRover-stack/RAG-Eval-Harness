@@ -55,5 +55,10 @@ class Settings(BaseSettings):
     # Docs (for building chunk source URLs, path + anchor)
     docs_base_url: str = "https://fastapi.tiangolo.com"
 
+    # Which RunConfig the served API builds its RetrievalPipeline/LLM/prompt
+    # from (api/deps.py) -- a path, not a metric-affecting value itself, so
+    # it lives here rather than inside the RunConfig it points at.
+    default_run_config: str = "configs/deploy.yaml"
+
 
 settings = Settings()

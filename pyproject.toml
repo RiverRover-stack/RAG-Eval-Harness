@@ -54,7 +54,8 @@ extend-exclude = ["data/corpus"]
 [tool.ruff.lint.flake8-bugbear]
 # typer's documented pattern is typer.Option(...)/typer.Argument(...) as an
 # argument default -- ruff's B008 doesn't know that's safe unless told.
-extend-immutable-calls = ["typer.Option", "typer.Argument"]
+# Same story for FastAPI's Depends(...).
+extend-immutable-calls = ["typer.Option", "typer.Argument", "fastapi.Depends"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
