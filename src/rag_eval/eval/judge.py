@@ -174,10 +174,10 @@ def aggregate_judge(per_item: list[dict], *, bootstrap_n: int = 1000, seed: int 
     return out
 
 
-def merge_judge_into_manifest(run_dir: Path, judge_block: dict) -> None:
+def merge_judge_into_manifest(run_dir: Path, block: dict, *, key: str = "judge") -> None:
     manifest_path = run_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest.setdefault("metrics", {})["judge"] = judge_block
+    manifest.setdefault("metrics", {})[key] = block
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
