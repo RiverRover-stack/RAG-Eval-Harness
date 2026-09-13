@@ -1,11 +1,11 @@
+# HyDE's query rewriter is built from generation.llm (see pipeline.py) even
+# though generation itself stays disabled here -- so this inherits _base's
+# groq/gpt-oss-120b rather than overriding it. (The pinned 0007 run used the
+# now-removed airforce/ministral-14b-latest provider; that run's manifest is
+# the honest record of what actually executed, unaffected by this config.)
 name: exp-hybrid-rerank-hyde
 extends: hybrid_rerank.yaml
 
 retrieval:
   query_rewrite:
     enabled: true
-
-generation:
-  llm:
-    provider: airforce
-    model: ministral-14b-latest

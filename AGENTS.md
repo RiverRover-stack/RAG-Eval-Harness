@@ -15,7 +15,7 @@ make lint    # uv run ruff check .
 make type    # uv run mypy src
 make test    # uv run pytest -m "not slow and not llm"
 make index   # uv run python -m rag_eval.ingestion.embed_and_store
-make eval    # uv run python -m rag_eval.eval.run_ragas
+make eval    # uv run rag-eval eval run --config configs/baseline.yaml
 make serve   # uv run uvicorn rag_eval.api.main:app --reload
 make demo    # index + serve
 ```

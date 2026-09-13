@@ -386,6 +386,31 @@ Sentence-level groundedness needs the whole answer, so support badges appear on 
 
 **Verify:** judge two runs differing only in generator; rubric and RAGAS agree directionally; report judge-vs-deterministic citation-accuracy correlation (if it's low, that's a finding worth writing up).
 
+**Result:** ✅ `eval/generate.py` (the missing bridge — nothing wired
+generation into the batch eval runner before this), `eval/judge.py`,
+`eval/rubric.py`, `answer_relevancy.strictness` 1→3, and the generator-A/B
+configs landed as 4 stacked PRs. ⚠️ Live verification numbers not yet run
+(needs `GROQ_API_KEY`/`GEMINI_API_KEY` + a local Ollama) — procedure is in
+`docs/phase8-judge-depth.md`.
+
+**Addendum — LLM provider consolidation.** Auditing "which LLM is used for
+what" (prompted before merging the above) found the C1 config split was
+never finished: `Settings` still carried `ragas_judge`, `groq_model`,
+`gemini_model`, `ollama_llm_model` — a second, drifted-out-of-sync source
+of model choice alongside `RunConfig` (`.env.example` said Groq
+`llama-3.1-8b-instant` + judge `ollama`; `configs/_base.yaml` said Groq
+`gpt-oss-120b` + judge `gemini`). The root cause was `eval/run_ragas.py`,
+kept in Phase 8 as a "local convenience," which was the only remaining
+reader of those `Settings` fields. Fix: deleted `run_ragas.py` outright
+(superseded by `eval/judge.py`), which also orphaned `rag/pipeline.py` and
+`generator.py::generate_answer`/`build_prompt` (zero remaining callers —
+deleted too). Also removed the `airforce` provider (ad-hoc Phase 6
+addition for one HyDE ablation, never in this plan's locked provider list,
+rate-limited to 1 req/min, mislabeled docstring). `configs/_base.yaml` now
+carries a role table (`generation.llm` vs `eval.judge`, and the HyDE
+query-rewriter's dependency on `generation.llm`) as the single documented
+map from provider to purpose.
+
 ### Phase 9 — Frontend
 
 `frontend/` — Next 15 App Router, TS, Tailwind, `output: 'export'`, `trailingSlash: true`, `images: {unoptimized: true}`. Two export constraints designed around now rather than discovered later: dynamic routes would need `generateStaticParams`, coupling `next build` to run artifacts — so **make the drilldown a client-side query route `/eval?run=<id>` fetching `/api/runs/{id}`**, pre-copying `runs/_pinned/**` into `frontend/public/artifacts/` only for the leaderboard's first paint. And `trailingSlash` must match `StaticFiles(html=True)` or you get 404s only in the container, never in `next dev`.

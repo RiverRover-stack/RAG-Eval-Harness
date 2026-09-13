@@ -1,3 +1,27 @@
+# --- LLM provider roles (the only two places a model gets chosen) ---------
+# There is exactly one place per role, both in RunConfig, both recorded in
+# every run's manifest.json -- API keys live in .env (common/config.py),
+# never a model/provider choice, so a run is fully reproducible from its
+# manifest alone:
+#
+#   generation.llm  -- the RAG answer generator (rag/generator.py,
+#                       api/routes/ask.py, eval/generate.py). ALSO drives the
+#                       HyDE query-rewrite LLM when retrieval.query_rewrite
+#                       is enabled (retrieval/pipeline.py), even if
+#                       generation itself stays disabled -- see
+#                       experiments/hybrid_rerank_hyde.yaml.
+#                       Default: groq (hosted, fast, cheap). Swap to
+#                       provider: ollama for local/offline dev.
+#
+#   eval.judge      -- the RAGAS + rubric judge (eval/judge.py,
+#                       eval/rubric.py). Always hosted, and asserted to never
+#                       be the same (provider, model) as generation.llm --
+#                       a model can't grade its own homework.
+#                       Default: gemini (native JSON mode; best structured-
+#                       output reliability for the rubric's JSON response).
+#
+# Valid providers: ollama, groq, gemini (providers/__init__.py::get_llm).
+# See docs/adr/0004 for why these are plain-httpx and not LangChain.
 name: _base
 
 corpus:

@@ -21,31 +21,24 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = "http://localhost:11434"
-    ollama_llm_model: str = "fdm-llama"
     ollama_embed_model: str = "nomic-embed-text"
 
-    # Eval
+    # Eval (legacy single-file discussions set; superseded by the per-dataset
+    # files under data/eval_sets/ built via eval/synth_eval_set.py, but
+    # eval/build_eval_set.py still targets this path)
     eval_set_path: str = "./data/eval_sets/fastapi_discussions_eval.jsonl"
 
-    # RAGAS judge: "ollama" (local), "groq" (hosted, free tier), or "gemini"
-    # (hosted, free tier, native JSON mode -- best structured-output reliability)
-    ragas_judge: str = "ollama"
+    # API keys only -- *which* provider/model to use for generation or
+    # judging is decided entirely by RunConfig (configs/*.yaml:
+    # generation.llm, eval.judge -- see the role table in configs/_base.yaml).
+    # A key belongs here because it can't change a metric; a model choice
+    # can, so it never does.
     groq_api_key: str = ""
-    groq_model: str = "llama-3.1-8b-instant"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
 
-    airforce_api_key: str = ""
-
-
-    # RAGAS execution: kept conservative for CPU-only local inference, where
-    # concurrency just queues jobs behind a single-threaded model instead of
-    # speeding anything up. Bump max_workers only if the judge is hosted or
-    # OLLAMA_NUM_PARALLEL is raised. Note: Gemini's free tier is only 10
-    # requests/minute -- more workers won't raise that ceiling, they just
-    # mean more simultaneous 429s for ragas's own retry/backoff to absorb.
-    ragas_max_workers: int = 1
-    ragas_timeout: int = 600
+    # HTTP request timeout for the Ollama provider -- the serving path, and
+    # (when eval.judge.provider is "ollama") the judge.
+    ollama_timeout: int = 600
 
     # Eval set sampling: 0 = use the full eval set. Set to a small number
     # (e.g. 10-15) to validate a judge/config change quickly and cheaply

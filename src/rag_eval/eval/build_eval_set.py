@@ -7,7 +7,8 @@ snapshot instead of two fetches taken on different days
 
 Each row: {question, ground_truth, source_url}. Contexts/answer get filled
 in later at eval-run time by actually running the RAG pipeline (see
-eval/run_ragas.py), so the eval set here stays pipeline-agnostic.
+eval/generate.py, eval/judge.py), so the eval set here stays
+pipeline-agnostic.
 
 Usage:
     uv run python -m rag_eval.eval.build_eval_set
