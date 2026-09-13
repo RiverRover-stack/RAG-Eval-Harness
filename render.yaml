@@ -19,7 +19,10 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     autoDeploy: true
-    healthCheckPath: /api/health
+    # /ready (not bare /health) is the actual runtime guard (docs/plan.md
+    # Phase 3): it 503s if the baked index is missing/empty/mismatched,
+    # which /api/health alone would report "ok" straight through.
+    healthCheckPath: /api/health/ready
     envVars:
       - key: GROQ_API_KEY
         sync: false
