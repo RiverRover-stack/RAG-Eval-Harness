@@ -18,8 +18,10 @@ architecture decisions.
 - Retrieval (eval path): dense + BM25 + RRF fusion + optional cross-encoder
   rerank + optional HyDE query rewrite + optional parent expansion,
   config-driven (`configs/`)
-- LLM providers: pluggable (`groq`, `gemini`, `airforce`, `ollama`) via
-  plain `httpx` — see `.env.example`
+- LLM providers: pluggable (`groq`, `gemini`, `ollama`) via plain `httpx` —
+  provider/model choice lives in `configs/*.yaml` (`generation.llm`,
+  `eval.judge`, see the role table in `configs/_base.yaml`), API keys in
+  `.env.example`
 - API: FastAPI
 - Eval: judge-free retrieval metrics (primary) + RAGAS (secondary,
   generation-focused)
@@ -87,9 +89,10 @@ provider you configure in `.env`.
    ```bash
    make serve   # uv run uvicorn rag_eval.api.main:app --reload
    ```
-4. **Run the legacy RAGAS eval** (secondary signal):
+4. **Run the eval harness** (retrieval metrics; add `--set generation.enabled=true`
+   for RAGAS/rubric judging, secondary signal):
    ```bash
-   make eval   # uv run python -m rag_eval.eval.run_ragas
+   make eval   # uv run rag-eval eval run --config configs/baseline.yaml
    ```
 
 ## Tests

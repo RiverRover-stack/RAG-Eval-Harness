@@ -26,8 +26,9 @@ The serving path (`providers/llm/{groq,gemini,ollama}.py`) is plain
 `httpx` calling each provider's REST API directly -- no LangChain in the
 request path a live user waits on. `providers/langchain_adapters.py` is
 the **one** module in the codebase permitted to import LangChain, and it
-exists solely to hand `eval/run_ragas.py` the `(llm, embeddings)` pair
-RAGAS's `evaluate()` requires. `langchain-ollama`, `langchain-groq`, and
+exists solely to hand `eval/judge.py` (and `eval/rubric.py`'s judge calls)
+the `(llm, embeddings)` pair RAGAS's `evaluate()` requires.
+`langchain-ollama`, `langchain-groq`, and
 `langchain-google-genai` remain dependencies for exactly this reason;
 `langchain-core` / `langchain-community` are transitive from those.
 

@@ -33,7 +33,7 @@ class OllamaLLM:
                 "stream": False,
                 "options": {"temperature": temperature, "num_predict": max_tokens},
             },
-            timeout=settings.ragas_timeout,
+            timeout=settings.ollama_timeout,
         )
         response.raise_for_status()
         data = response.json()
@@ -54,7 +54,7 @@ class OllamaLLM:
         """Ollama's stream is NDJSON, not SSE -- one bare JSON object per
         line, no `data: ` prefix, no `[DONE]` sentinel. The last line has
         `"done": true` plus the final `prompt_eval_count`/`eval_count`."""
-        async with httpx.AsyncClient(timeout=settings.ragas_timeout) as client, client.stream(
+        async with httpx.AsyncClient(timeout=settings.ollama_timeout) as client, client.stream(
             "POST",
             f"{self._base_url}/api/chat",
             json={

@@ -6,7 +6,10 @@ itself requires LangChain LLM/embeddings objects to score with, so this
 module is the one deliberate exception. See
 docs/adr/0004-plain-httpx-providers-langchain-confined-to-judge.md.
 
-Moved here from eval/run_ragas.py verbatim (Phase 2); behavior unchanged.
+Moved here from eval/run_ragas.py verbatim (Phase 2), then generalized to
+take an explicit provider/model in Phase 8 once eval/judge.py made
+RunConfig.eval.judge the only source of "which judge" -- the env-based
+RAGAS_JUDGE selector this used to fall back to is gone.
 """
 
 from __future__ import annotations
@@ -17,16 +20,14 @@ from pydantic import SecretStr
 from rag_eval.common.config import settings
 
 
-def build_judge(provider: str | None = None, model: str | None = None):
+def build_judge(provider: str, model: str):
     """Return (llm, embeddings) for the judge.
 
-    `provider` / `model` come from `RunConfig.eval.judge` when the caller is
-    the Phase 8 artifact judge (eval/judge.py); both fall back to the
-    RAGAS_JUDGE / *_model env settings for the legacy eval/run_ragas.py
-    path. API keys always come from settings. Judge embeddings stay on local
-    Ollama regardless -- cheap, and not what caused the timeouts.
+    `provider` / `model` come from `RunConfig.eval.judge` (see
+    eval/judge.py, eval/rubric.py) -- the single place "which judge" is
+    decided. API keys always come from settings. Judge embeddings stay on
+    local Ollama regardless -- cheap, and not what caused the timeouts.
     """
-    provider = provider or settings.ragas_judge
     judge_embeddings = OllamaEmbeddings(
         model=settings.ollama_embed_model, base_url=settings.ollama_base_url
     )
@@ -40,7 +41,7 @@ def build_judge(provider: str | None = None, model: str | None = None):
         from langchain_groq import ChatGroq
 
         return ChatGroq(
-            model=model or settings.groq_model,
+            model=model,
             api_key=SecretStr(settings.groq_api_key),
             temperature=0,
             max_tokens=4096,
@@ -55,7 +56,7 @@ def build_judge(provider: str | None = None, model: str | None = None):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         return ChatGoogleGenerativeAI(
-            model=model or settings.gemini_model,
+            model=model,
             google_api_key=SecretStr(settings.gemini_api_key),
             temperature=0,
             max_tokens=4096,
@@ -70,6 +71,4 @@ def build_judge(provider: str | None = None, model: str | None = None):
             f"Unknown judge provider {provider!r}, expected 'ollama', 'groq', or 'gemini'"
         )
 
-    return ChatOllama(
-        model=model or settings.ollama_llm_model, base_url=settings.ollama_base_url
-    ), judge_embeddings
+    return ChatOllama(model=model, base_url=settings.ollama_base_url), judge_embeddings

@@ -2,10 +2,11 @@
 
 `rag-eval eval judge <run_id>` reads ``runs/<id>/generation.jsonl`` (written
 by ``eval/generate.py``) and writes ``runs/<id>/judge.jsonl`` -- per-item
-RAGAS scores -- plus a ``judge`` block merged into the run manifest. This is
-the generalized, run-artifact-anchored form of the old
-``eval/run_ragas.py`` ``--export-only`` / ``--score-only`` split, kept
-working for ``notebooks/kaggle_judge_eval.py``:
+RAGAS scores -- plus a ``judge`` block merged into the run manifest. This
+replaces the now-deleted ``eval/run_ragas.py``, generalizing its
+``--export-only`` / ``--score-only`` split to be run-artifact-anchored
+instead of pipeline-coupled, and is what ``notebooks/kaggle_judge_eval.py``
+scores against:
 
     judge <run_id> --export-only     -> runs/<id>/judge_export.jsonl
                                         (portable, no scores; upload to Kaggle)
