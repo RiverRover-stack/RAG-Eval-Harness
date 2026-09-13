@@ -41,6 +41,7 @@ COPY --from=index /app/data/processed /app/data/processed
 COPY --from=index /app/data/corpus/SNAPSHOT.json data/corpus/SNAPSHOT.json
 COPY --from=web /web/out /app/deploy/web-placeholder
 COPY src/ src/
+COPY configs/ configs/
 ENV PATH="/app/.venv/bin:$PATH" \
     CHROMA_PERSIST_DIR=/app/data/processed/chroma \
     FASTEMBED_CACHE_DIR=/app/data/processed/fastembed \
