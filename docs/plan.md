@@ -20,7 +20,7 @@ Plus a weak CPU generator (`fdm-llama` emitted a 13-character "answer" on one ro
 |---|---|
 | Serving LLM | Groq `llama-3.3-70b-versatile` default; Gemini fallback; Ollama for local dev. Plain `httpx`, not LangChain, in the serving path |
 | Embeddings | `fastembed` `BAAI/bge-small-en-v1.5` (ONNX, in-process, 384-dim). Ollama retained as a local backend |
-| Deploy | Hugging Face Spaces, Docker SDK, single container, port 7860. **Thin slice ships early (Phase 3), then every phase redeploys via CD** |
+| Deploy | Render (Docker runtime, free tier), single container. **Thin slice ships early (Phase 3), then every phase redeploys via CD.** Originally targeted Hugging Face Spaces — switched because HF's Docker SDK required a paid tier for this account; see the Phase 3 addendum |
 | Frontend | Next.js App Router + TS + Tailwind, `output: 'export'`, served by FastAPI `StaticFiles` |
 | Retrieval metrics | Judge-free recall@k / MRR / nDCG over a synthetic docs set, gating CI |
 | Label verification | Automated filters **plus a human pass**: review ~50 synthetic pairs (y/n/edit) and hand-label gold docs sections for ~16 real discussion questions. Yields a measured label error rate |
@@ -249,6 +249,25 @@ Ship the container now, while it's cheap to debug. Four-stage Dockerfile, with t
 - Mount `StaticFiles(html=True)` at `/` with the API under `/api`; keep the existing `/health` so its integration test passes unchanged.
 
 **Verify:** `docker build` locally; `docker run -p 7860:7860 -e GROQ_API_KEY=...`; `/api/health/ready` green; push to `main` and confirm the Space redeploys and answers a question end to end.
+
+**Addendum — switched Hugging Face Spaces → Render.** HF's Docker-SDK
+Space creation asked for a paid plan on this account, so the deploy target
+moved to Render (Docker runtime, free tier) instead. Everything above that
+isn't HF-specific — the four-stage Dockerfile, baking the index at build
+time, `${PORT:-7860}`, `/api/health/ready` as the runtime guard — carried
+over unchanged; only the deploy mechanics changed:
+- `deploy/space/README.md` (HF's YAML front-matter) is gone. `render.yaml`
+  is the Render equivalent — deploy config as a checked-in file rather
+  than a dashboard click-through.
+- Render builds the `Dockerfile` directly from the repo (respecting
+  `.dockerignore`), so the old `rsync`-assembled push directory is gone
+  too — one less thing to keep in sync with `.dockerignore` by hand.
+- `deploy.yml` now just calls Render's Deploy Hook (`secrets.
+  RENDER_DEPLOY_HOOK_URL`) after CI is green, with `autoDeploy: false` in
+  `render.yaml` so Render's own push-triggered deploy can't bypass that
+  gate.
+- `keepalive.yml` pings every 10 minutes instead of every 6 hours — Render's
+  free tier sleeps after 15 minutes idle, a much shorter window than HF's.
 
 ### Phase 4 — Eval sets, gold labels, metrics, manifests, CLI
 
