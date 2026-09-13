@@ -10,7 +10,7 @@ Every retrieval query and every re-index needs an embedding call. A hosted
 embeddings API (OpenAI, Cohere, a hosted Ollama) adds a network round trip
 to the hot path, a per-call cost, and a dependency the demo goes down
 without. The deploy target (docs/plan.md, "Locked decisions") is a single
-Hugging Face Space container, so anything requiring a second running
+container on a free hosting tier, so anything requiring a second running
 service is a deployment liability, not just a latency one.
 
 The alternative in-process options were `sentence-transformers` and

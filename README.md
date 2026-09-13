@@ -135,8 +135,8 @@ retrieval metrics against the pinned baseline.
 ## Deployment
 
 Single Docker image with the index baked in at build time (see
-`docs/adr/0005-bake-index-at-build-time.md`), auto-deployed to a Hugging
-Face Space on every green `main`.
+`docs/adr/0005-bake-index-at-build-time.md`), deployed to Render on every
+green `main` (`render.yaml`).
 
 ## Limitations
 

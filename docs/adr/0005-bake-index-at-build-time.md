@@ -6,9 +6,9 @@ Accepted
 
 ## Context
 
-The deploy target (docs/plan.md, "Locked decisions") is a single Hugging
-Face Space container on the free tier, which sleeps after inactivity and
-cold-starts on the next request. If the container built its Chroma index on
+The deploy target (docs/plan.md, "Locked decisions") is a single container
+on a free hosting tier, which sleeps after inactivity and cold-starts on
+the next request. If the container built its Chroma index on
 startup -- chunking the committed corpus, embedding ~1200 chunks with
 fastembed -- that 30-60s of CPU-bound work would sit in front of every cold
 start. A first-time visitor's request would look hung or broken well before
