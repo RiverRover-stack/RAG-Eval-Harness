@@ -2,17 +2,23 @@
 # as code, replacing the Hugging Face Space YAML front-matter this project
 # used to carry in deploy/space/README.md.
 #
-# autoDeploy is deliberately off: .github/workflows/deploy.yml calls this
-# service's Deploy Hook only after CI is green on main (docs/plan.md Phase
-# 3: "never deploys an unvalidated commit"). Render's own push-triggered
-# auto-deploy would bypass that gate.
+# No GitHub Actions deploy workflow needed: the service's Auto-Deploy
+# setting is "After CI Checks Pass" (Render dashboard -> Settings -> Build &
+# Deploy), which makes Render itself wait for the CI workflow's status
+# check to go green on a commit before deploying it -- the same "never
+# deploys an unvalidated commit" rule (docs/plan.md Phase 3), with no extra
+# workflow or Deploy Hook secret to maintain. That setting isn't set from
+# this file today (the service was created via Render's manual "New Web
+# Service" form, not a Blueprint sync) -- this file documents the intended
+# config; keep it in sync with the dashboard by hand until/unless the
+# service is re-created from this Blueprint.
 services:
   - type: web
     name: rag-eval-harness
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    autoDeploy: false
+    autoDeploy: true
     healthCheckPath: /api/health
     envVars:
       - key: GROQ_API_KEY

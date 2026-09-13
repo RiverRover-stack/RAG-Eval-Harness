@@ -262,10 +262,11 @@ over unchanged; only the deploy mechanics changed:
 - Render builds the `Dockerfile` directly from the repo (respecting
   `.dockerignore`), so the old `rsync`-assembled push directory is gone
   too — one less thing to keep in sync with `.dockerignore` by hand.
-- `deploy.yml` now just calls Render's Deploy Hook (`secrets.
-  RENDER_DEPLOY_HOOK_URL`) after CI is green, with `autoDeploy: false` in
-  `render.yaml` so Render's own push-triggered deploy can't bypass that
-  gate.
+- `.github/workflows/deploy.yml` is **gone entirely** — no custom workflow
+  or Deploy Hook secret needed. The service's Auto-Deploy setting is
+  "After CI Checks Pass" (Render dashboard), which makes Render itself wait
+  for the CI workflow's status check to go green before deploying a
+  commit — the same gate, one less moving part.
 - `keepalive.yml` pings every 10 minutes instead of every 6 hours — Render's
   free tier sleeps after 15 minutes idle, a much shorter window than HF's.
 
