@@ -43,9 +43,11 @@ download output) sidesteps that risk and fits how this is actually used:
 one-shot dev-time validation and ad-hoc bulk runs, not an always-on judge.
 """
 
-# %% Cell 1 -- install Ollama
+# %% Cell 1 -- install Ollama (its installer shells out to zstd for
+# extraction; Kaggle's base image doesn't have it -- confirmed live 2026-09)
 import subprocess
 
+subprocess.run("apt-get update -qq && apt-get install -y -qq zstd", shell=True, check=True)
 subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True, check=True)
 
 # %% Cell 2 -- sanity-check the GPU setup before committing to a 20GB pull
