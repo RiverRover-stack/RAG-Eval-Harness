@@ -7,6 +7,9 @@ extends: hybrid_rerank.yaml
 generation:
   enabled: true
   llm:
+    # Meta-Llama-3.1-8B-Instruct, Q4 GGUF -- see Modelfile.fdm-llama (repo
+    # root) to recreate this local Ollama tag; `ollama create fdm-llama -f
+    # Modelfile.fdm-llama` before running this config.
     provider: ollama
     model: fdm-llama
 

@@ -12,6 +12,8 @@ from functools import lru_cache
 from rag_eval.providers.base import EmbeddingProvider, LLMProvider
 
 DEFAULT_LLM_PROVIDER = "ollama"
+# Meta-Llama-3.1-8B-Instruct, Q4 GGUF -- see Modelfile.fdm-llama (repo root)
+# to recreate this local Ollama tag from scratch.
 DEFAULT_LLM_MODEL = "fdm-llama"
 
 DEFAULT_EMBEDDING_PROVIDER = "fastembed"
