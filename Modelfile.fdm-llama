@@ -1,0 +1,18 @@
+# Recreates the "fdm-llama" Ollama model tag used throughout this repo
+# (providers/__init__.py DEFAULT_LLM_MODEL, providers/llm/ollama.py default,
+# configs/experiments/gen_hybrid_ollama.yaml) as the intentionally weak,
+# CPU-friendly local generator in the Phase 8 generator A/B.
+#
+# fdm-llama = Meta-Llama-3.1-8B-Instruct, Q4 quantization, GGUF, downloaded
+# from Hugging Face. This file was undocumented until now -- nothing in the
+# repo recorded what base model it actually was, which made it impossible
+# to reproduce anywhere but the original machine it was created on.
+#
+# To recreate it locally:
+#   1. Download the Q4 GGUF of Meta-Llama-3.1-8B-Instruct from Hugging Face
+#      (e.g. a quantized repo such as bartowski/Meta-Llama-3.1-8B-Instruct-GGUF,
+#      *Q4_K_M or *Q4_0 build -- match whichever Q4 variant you actually have).
+#   2. Edit the FROM line below to the absolute path of that .gguf file.
+#   3. ollama create fdm-llama -f Modelfile.fdm-llama
+#
+# FROM /absolute/path/to/Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf
