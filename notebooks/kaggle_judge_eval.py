@@ -68,7 +68,7 @@ for _ in range(30):
     try:
         urllib.request.urlopen(OLLAMA_URL, timeout=2)
         break
-    except (urllib.error.URLError, ConnectionError):
+    except (urllib.error.URLError, ConnectionError, TimeoutError):
         time.sleep(1)
 else:
     raise RuntimeError("ollama serve did not become ready within 30s")
