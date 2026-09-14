@@ -85,11 +85,15 @@ subprocess.run(["ollama", "pull", EMBED_MODEL], check=True)
 # %% Cell 5 -- install RAGAS + friends (versions match pyproject.toml)
 subprocess.run(
     [
-        "pip", "install", "-q",
+        "pip", "install", "-q", "-U",
         "ragas>=0.2,<0.4",
         "datasets>=2.20",
         "langchain-ollama>=0.2",
         "langchain-core>=0.3",
+        # ragas imports langchain_community.chat_models.vertexai; Kaggle's
+        # base image ships an incompatible pre-installed langchain_community
+        # missing that submodule -- confirmed live 2026-09.
+        "langchain-community<0.4",
     ],
     check=True,
 )
