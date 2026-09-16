@@ -65,6 +65,29 @@ Pytest markers: `slow`, `integration`, `llm`. CI runs `-m "not slow and not llm"
   roughly triples the Docker image size, breaking the single-container
   deploy target. Use `fastembed`'s ONNX cross-encoder.
 
+## Merge policy: review-required
+
+This is a portfolio project, and merging to `main` deploys it (Render
+auto-deploys once CI is green). `main` has no branch protection, so these
+rules are the only gate:
+
+- Never commit, push, open a PR, or merge without first showing me the diff
+  and getting an explicit go-ahead. Approval covers that one change only.
+- Before asking, dispatch the `reviewer` subagent and show me its verdict and
+  risk label next to the diff. A "block" verdict gets fixed before I see it.
+- Before asking, run `make lint type test` and see them pass. Any change that
+  can move a metric also needs the eval gate
+  (`uv run rag-eval eval gate --config configs/ci.yaml`) and the before/after numbers
+  with bootstrap CIs.
+- Work on a branch, never on `main`. Use one PR per logical change. Before
+  pushing to a branch that already has a PR, check
+  `gh pr view <n> --json state,mergedAt`. If it has merged, start a fresh
+  branch.
+- I merge PRs myself, and only after both CI jobs (tests and eval gate) are
+  green. Never force-push. No AI-attribution footers.
+- Log each commit, PR, and pending go-ahead in `STATUS.md`
+  (`## Done` / `## In progress` / `## Needs your call`).
+
 ## Known follow-ups (see plan for detail)
 
 - `tests/unit/test_retriever.py`'s 5 tests are written against the naive
