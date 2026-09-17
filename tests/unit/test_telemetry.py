@@ -8,6 +8,7 @@ from rag_eval.common.telemetry import (
     estimate_cost,
     log_feedback,
     log_request,
+    log_verdict,
     read_stats,
     timed,
 )
@@ -107,6 +108,38 @@ def test_log_feedback_appends_rather_than_overwrites(tmp_path):
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
     assert json.loads(lines[1])["verdict"] == "bad"
+
+
+def test_log_verdict_appends_a_json_line_to_the_dated_file(tmp_path):
+    now = datetime(2026, 8, 30, tzinfo=UTC)
+
+    path = log_verdict(request_id="r1", verdict="correct", log_dir=tmp_path, now=now)
+
+    assert path == tmp_path / "verdict-2026-08-30.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert row["request_id"] == "r1"
+    assert row["verdict"] == "correct"
+
+
+def test_log_verdict_appends_rather_than_overwrites(tmp_path):
+    now = datetime(2026, 8, 30, tzinfo=UTC)
+    log_verdict(request_id="r1", verdict="correct", log_dir=tmp_path, now=now)
+    path = log_verdict(request_id="r2", verdict="wrong", log_dir=tmp_path, now=now)
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[1])["verdict"] == "wrong"
+
+
+def test_log_verdict_is_a_separate_log_file_from_log_feedback(tmp_path):
+    now = datetime(2026, 8, 30, tzinfo=UTC)
+    log_feedback(request_id="r1", verdict="good", log_dir=tmp_path, now=now)
+    log_verdict(request_id="r1", verdict="correct", log_dir=tmp_path, now=now)
+
+    assert (tmp_path / "feedback-2026-08-30.jsonl").read_text(encoding="utf-8").count("\n") == 1
+    assert (tmp_path / "verdict-2026-08-30.jsonl").read_text(encoding="utf-8").count("\n") == 1
 
 
 def test_read_stats_on_empty_log_dir_is_all_zero(tmp_path):

@@ -136,6 +136,48 @@ def test_ask_stream_retrieval_event_precedes_first_token(fake_embedder):
 
     retrieval_payload = json.loads(events[retrieval_idx][1])
     assert retrieval_payload["candidates"][0]["chunk_id"] == "a"
+    assert retrieval_payload["candidates"][0]["content"] == "content"
+    assert retrieval_payload["candidates"][0]["gold"] is False
+    # FakeStreamPipeline doesn't set dense_candidates, but the route must
+    # still read+serialize whatever RetrievalResult gives it without
+    # blowing up on the (here, empty) default.
+    assert retrieval_payload["dense_candidates"] == []
+
+
+def test_ask_stream_retrieval_event_marks_dense_and_reranked_candidates_gold(fake_embedder):
+    import json
+
+    from rag_eval.eval.gold import EvalItem
+    from rag_eval.retrieval.base import RetrievalResult
+
+    candidates = [_candidate("a", "content", "https://x/a")]
+    dense_candidates = [_candidate("a", "content", "https://x/a"), _candidate("b", "other", "https://x/b")]
+
+    class FakeStreamPipelineWithDense:
+        def retrieve(self, query, *, k=None, deny_ids=frozenset()):
+            return RetrievalResult(query=query, candidates=candidates, dense_candidates=dense_candidates)
+
+    llm = FakeStreamLLM(["hi"])
+    item = EvalItem(id="1", dataset="docs_synth_v1", question="q", gold_chunk_ids=["a"])
+    app.dependency_overrides[get_app_state] = lambda: AppState(
+        cfg=RunConfig(name="test"),
+        pipeline=FakeStreamPipelineWithDense(),
+        llm=llm,
+        embedder=fake_embedder,
+        prompt=PROMPTS["v2-cited"],
+        eval_items_by_question={"q": item},
+    )
+    try:
+        resp = client.post("/api/ask/stream", json={"question": "q"})
+    finally:
+        app.dependency_overrides.clear()
+
+    events = _parse_sse(resp.text)
+    retrieval_payload = json.loads(next(data for name, data in events if name == "retrieval"))
+    assert retrieval_payload["candidates"][0]["gold"] is True
+    assert [c["chunk_id"] for c in retrieval_payload["dense_candidates"]] == ["a", "b"]
+    assert retrieval_payload["dense_candidates"][0]["gold"] is True
+    assert retrieval_payload["dense_candidates"][1]["gold"] is False
 
 
 def test_ask_stream_insufficient_context_reports_abstained(fake_embedder):

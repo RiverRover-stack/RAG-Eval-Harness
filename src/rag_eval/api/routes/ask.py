@@ -34,7 +34,14 @@ from pydantic import BaseModel, Field
 
 from rag_eval.api.deps import AppState, get_app_state
 from rag_eval.api.rate_limit import check_daily_budget, rate_limit
-from rag_eval.common.telemetry import Usage, estimate_cost, log_feedback, log_request, timed
+from rag_eval.common.telemetry import (
+    Usage,
+    estimate_cost,
+    log_feedback,
+    log_request,
+    log_verdict,
+    timed,
+)
 from rag_eval.config.run_config import config_hash
 from rag_eval.rag.citations import Citation, StreamingCitationScanner
 from rag_eval.rag.generator import generate_cited_answer, score_answer
@@ -161,15 +168,17 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-def _candidate_out(c: Candidate) -> dict:
+def _candidate_out(c: Candidate, gold_chunk_ids: set[str]) -> dict:
     return {
         "chunk_id": c.chunk_id,
         "url": c.url,
         "title": c.title,
         "source_type": c.source_type,
+        "content": c.content,
         "scores": c.scores,
         "ranks": c.ranks,
         "stages": c.stages,
+        "gold": c.chunk_id in gold_chunk_ids,
     }
 
 
@@ -191,10 +200,17 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
             yield _sse("error", {"detail": f"RAG backend unavailable: {e}"})
             return
 
+        # Computed here, before the retrieval event, rather than down by
+        # `done` -- `_candidate_out` needs it to mark gold candidates for the
+        # evaluation panel's chunk list, which renders off the `retrieval`
+        # event alone, well before the answer finishes generating.
+        gold_chunk_ids = _gold_chunk_ids(req.question, state)
+
         yield _sse(
             "retrieval",
             {
-                "candidates": [_candidate_out(c) for c in result.candidates],
+                "candidates": [_candidate_out(c, gold_chunk_ids) for c in result.candidates],
+                "dense_candidates": [_candidate_out(c, gold_chunk_ids) for c in result.dense_candidates],
                 "timings": result.stage_timings,
             },
         )
@@ -251,7 +267,6 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
     log_request(usage, request_id=request_id, endpoint="/api/ask/stream", abstained=abstained)
 
     candidates_by_id = {c.chunk_id: c for c in result.candidates}
-    gold_chunk_ids = _gold_chunk_ids(req.question, state)
     yield _sse(
         "done",
         {
@@ -297,6 +312,17 @@ class FeedbackRequest(BaseModel):
 @router.post("/feedback")
 def feedback(req: FeedbackRequest) -> dict:
     log_feedback(request_id=req.request_id, verdict=req.verdict)
+    return {"ok": True}
+
+
+class VerdictRequest(BaseModel):
+    request_id: str = Field(..., max_length=64)
+    verdict: Literal["correct", "wrong"]
+
+
+@router.post("/verdict")
+def verdict(req: VerdictRequest) -> dict:
+    log_verdict(request_id=req.request_id, verdict=req.verdict)
     return {"ok": True}
 
 
