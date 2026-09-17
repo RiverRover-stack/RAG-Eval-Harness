@@ -37,8 +37,29 @@
   reverified (346 passed).
 
 ## In progress
-(nothing active right now -- PR1 is complete and reviewed twice; waiting
-on your go-ahead to commit. PR2, the evaluation panel, starts after.)
+- **2026-09-18 — Citation fullwidth-bracket render fix**, on its own
+  branch `fix/inline-citation-fullwidth-brackets` (off `main`, separate
+  from PR2's `feat/phase9-pr2-eval-panel` per your call — one PR per
+  logical change). You reported it live via screenshots: `【2】【3】`
+  rendering as inert text instead of a clickable source tile. Root cause:
+  two separate regexes -- `rag/citations.py`'s `_CITATION_RE` (backend
+  extraction/scoring) already matched both `[n]`/`【n】` brackets from the
+  PR1 fix, but `frontend/lib/inline.tsx`'s `renderAnswerInline()` (the
+  inline-pill *renderer*) was never updated and only matched ASCII `[n]`
+  -- so the backend always tracked the citation correctly (gold/cited data
+  was right) while the frontend silently failed to render it as a tile.
+  Widened `inline.tsx`'s split/marker regexes to `[\[【]\d+[\]】]`,
+  mirroring the backend pattern exactly. Added `lib/inline.test.tsx` (6
+  cases: ASCII, fullwidth, mixed, unresolved-index, code-span
+  non-interference) -- first test file to exercise JSX/component code, so
+  also added the `@/` alias (`resolve.alias`) and JSX transform
+  (`esbuild.jsx: "automatic"`) to `vitest.config.ts`, both missing
+  because no prior test needed them. `npm run lint`/`tsc --noEmit`/
+  `test` (11 passed)/`build` all green. Manually verified live in a
+  browser against the real API with your exact reported question ("What
+  benefit does using asynchronous code provide for web APIs?") -- both
+  citations now render as clickable pills. Not yet committed, pushed, or
+  opened as a PR; waiting on your go-ahead per the merge policy.
 
 ## Needs your call
 - **Diff review for PR1** — not yet committed, pushed, or opened as a PR;
