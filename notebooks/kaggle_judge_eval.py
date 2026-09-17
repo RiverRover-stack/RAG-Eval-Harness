@@ -43,9 +43,11 @@ download output) sidesteps that risk and fits how this is actually used:
 one-shot dev-time validation and ad-hoc bulk runs, not an always-on judge.
 """
 
-# %% Cell 1 -- install Ollama
+# %% Cell 1 -- install Ollama (its installer shells out to zstd for
+# extraction; Kaggle's base image doesn't have it -- confirmed live 2026-09)
 import subprocess
 
+subprocess.run("apt-get update -qq && apt-get install -y -qq zstd", shell=True, check=True)
 subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True, check=True)
 
 # %% Cell 2 -- sanity-check the GPU setup before committing to a 20GB pull
@@ -66,7 +68,7 @@ for _ in range(30):
     try:
         urllib.request.urlopen(OLLAMA_URL, timeout=2)
         break
-    except (urllib.error.URLError, ConnectionError):
+    except (urllib.error.URLError, ConnectionError, TimeoutError):
         time.sleep(1)
 else:
     raise RuntimeError("ollama serve did not become ready within 30s")
@@ -83,11 +85,15 @@ subprocess.run(["ollama", "pull", EMBED_MODEL], check=True)
 # %% Cell 5 -- install RAGAS + friends (versions match pyproject.toml)
 subprocess.run(
     [
-        "pip", "install", "-q",
+        "pip", "install", "-q", "-U",
         "ragas>=0.2,<0.4",
         "datasets>=2.20",
         "langchain-ollama>=0.2",
         "langchain-core>=0.3",
+        # ragas imports langchain_community.chat_models.vertexai; Kaggle's
+        # base image ships an incompatible pre-installed langchain_community
+        # missing that submodule -- confirmed live 2026-09.
+        "langchain-community<0.4",
     ],
     check=True,
 )
