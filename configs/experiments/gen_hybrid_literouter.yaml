@@ -1,0 +1,9 @@
+# Generation arm: literouter provider.
+name: exp-gen-literouter
+extends: gen_hybrid_ollama.yaml
+
+generation:
+  llm:
+    provider: literouter
+    model: glm-5.3-flash:free
+    max_tokens: 2000
