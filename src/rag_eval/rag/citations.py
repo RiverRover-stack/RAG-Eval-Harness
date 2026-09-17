@@ -13,7 +13,11 @@ from dataclasses import dataclass
 
 from rag_eval.retrieval.base import Candidate
 
-_CITATION_RE = re.compile(r"\[(\d+)\]")
+# Groq/Llama occasionally emits fullwidth brackets (U+3010/U+3011) instead
+# of the prompted ASCII `[n]` -- a model formatting quirk, not a rare edge
+# case, so both are treated as the same marker rather than dropping the
+# citation on the floor.
+_CITATION_RE = re.compile(r"[\[【](\d+)[\]】]")
 # A "sentence" runs up to and including its terminal punctuation, or -- for
 # a trailing fragment with none, e.g. the INSUFFICIENT_CONTEXT sentinel --
 # to the end of the text.
@@ -104,7 +108,7 @@ class StreamingCitationScanner:
 
     def feed(self, delta: str) -> list[Citation]:
         self._buffer += delta
-        safe_end = self._buffer.rfind("]") + 1
+        safe_end = max(self._buffer.rfind("]"), self._buffer.rfind("】")) + 1
         if safe_end <= self._scanned_to:
             return []
 

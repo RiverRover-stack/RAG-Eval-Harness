@@ -443,6 +443,63 @@ map from provider to purpose.
 
 **Verify:** `npm run build` produces `out/`; reducer test passes on a canned event sequence; Playwright smoke test drives Ask against a mocked API; the deployed Space serves `/` and `/eval`.
 
+**Addendum — Ask-view design superseded by an external design brief.** A
+design brief (external, not part of this plan's own design pass, not
+checked into this repo) landed mid-phase and **replaces the Ask-view design
+above** (the left-prose/right-sticky-trace-panel layout, its own token set).
+The Eval-view (pinned-run leaderboard, CI bars, regression list) is
+**unaffected** — it remains a separate route, built to the original spec
+below, once the console lands.
+
+The brief's own interactive prototype did not actually run (a missing
+runtime dependency), so its written spec — interaction table, state shape,
+pixel values — was used as source of truth instead of clicking through it.
+
+**"FastAPI Docs Assistant" console** — one screen, two modes via a header
+switch, not two views:
+- **Answer only** (default) — centred reading column (`max-width: 760px`),
+  turns accumulate as a vertical list, inline `[n]`-style source tiles
+  (gold vs ordinary, styled per the design brief's token table — gold tiles
+  use `--accent-gold` and are **only** the ones from the matched eval
+  item's `gold_urls`, never a generic brand accent), a Yes/No feedback row,
+  a header gate indicator (`not abstained` from the existing generator
+  output — no new computation needed).
+- **Answer + evaluation** — same turns, plus a `404px` right panel: stage
+  pills (dense/rerank candidate switch), a chunk list with expandable
+  chunk text, and a reviewer verdict (Correct/Wrong) logged separately from
+  the end-user Yes/No.
+
+Full pixel-level spec (exact colors, type scale, spacing, radii, copy,
+interaction table) lives with whoever holds the design brief; this
+addendum only records the decisions that affect the backend contract and
+project scope.
+
+**Resolved scope decisions:**
+- `Gold found` / `Gold rank` metric tiles live **only** in the evaluation
+  panel, never inline in the chat column (the inline source-tile gold/
+  ordinary color distinction is a separate, chat-visible feature and stays).
+- Gold metrics are **eval-set-backed only**: the "Try" suggestion chips are
+  real `docs_synth_v1`/`discussions_v2` questions (so their `gold_urls`
+  resolve for real), and any free-typed question still gets a full
+  retrieval trace + groundedness (both gold-free) but renders `Gold found`/
+  `Gold rank` as `—` in the panel — never a fabricated gold answer for
+  arbitrary text.
+- Keep `/api/ask` / `/api/ask/stream` as-is; do not rename to the design
+  brief's placeholder `/query`.
+
+**Backend contract additions needed** (small, additive — no route renames):
+- `Candidate`/citation output gains a `gold: bool` (member of the active
+  eval item's resolved `gold_chunk_ids`, else `False`) and a display path
+  slug for the tile label.
+- `POST /api/feedback` — end-user Yes/No, `{request_id, verdict}`, appended
+  to a request-scoped log (same pattern as `common/telemetry.py::log_request`).
+- `POST /api/verdict` — reviewer Correct/Wrong, logged separately from
+  end-user feedback per the design brief's own split.
+- `GET /api/suggestions` — returns eval-set questions (with resolvable gold)
+  for the "Try" chips.
+- No change to `eval.py`'s run-artifact routes; the pinned-run leaderboard
+  reads those unchanged.
+
 ### Phase 10 — Portfolio presentation
 
 Restructure `README.md` to lead with results:

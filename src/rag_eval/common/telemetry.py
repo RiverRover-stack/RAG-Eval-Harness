@@ -94,6 +94,26 @@ def log_request(
     return log_path
 
 
+def log_feedback(
+    *,
+    request_id: str,
+    verdict: str,
+    log_dir: Path = DEFAULT_LOG_DIR,
+    now: datetime | None = None,
+) -> Path:
+    """Append one JSON line to today's feedback log (POST /api/feedback),
+    same append-only pattern as `log_request` -- creates the directory and
+    file as needed. Returns the log file path written to."""
+    now = now or datetime.now(UTC)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"feedback-{now:%Y-%m-%d}.jsonl"
+
+    row = {"request_id": request_id, "verdict": verdict, "timestamp": now.isoformat()}
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+    return log_path
+
+
 @dataclass(frozen=True)
 class Stats:
     request_count: int

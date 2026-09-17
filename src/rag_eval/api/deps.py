@@ -10,16 +10,27 @@ through.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import HTTPException, Request
 
 from rag_eval.config.run_config import RunConfig, load_run_config
+from rag_eval.eval.datasets import load_dataset
+from rag_eval.eval.gold import EvalItem, GoldIndex, resolve_gold_chunks
+from rag_eval.eval.runner import build_corpus_gold_index
 from rag_eval.providers import get_embedder, get_llm
 from rag_eval.providers.base import EmbeddingProvider, LLMProvider
 from rag_eval.rag.prompts import PROMPTS
 from rag_eval.rag.prompts.base import PromptTemplate
 from rag_eval.retrieval.pipeline import RetrievalPipeline
+
+# Eval sets whose questions back the "Try" suggestion chips and gold-aware
+# citation highlighting -- docs_synth_v1 first so suggestions() can prefer it.
+EVAL_DATASETS = ("docs_synth_v1", "discussions_v2")
+
+
+def _empty_gold_index() -> GoldIndex:
+    return GoldIndex(by_url={}, by_page={})
 
 
 @dataclass
@@ -29,16 +40,34 @@ class AppState:
     llm: LLMProvider
     embedder: EmbeddingProvider
     prompt: PromptTemplate
+    # keyed by exact question.strip() -- lets /api/ask* mark a citation
+    # `gold` and /api/suggestions offer only gold-resolvable questions,
+    # without fabricating either for a free-typed question. Default empty so
+    # existing AppState(...) call sites (tests) don't have to know about it.
+    gold_index: GoldIndex = field(default_factory=_empty_gold_index)
+    eval_items_by_question: dict[str, EvalItem] = field(default_factory=dict)
+
+
+def _load_eval_items_by_question(gold_index: GoldIndex) -> dict[str, EvalItem]:
+    items_by_question: dict[str, EvalItem] = {}
+    for dataset_name in EVAL_DATASETS:
+        for item in load_dataset(dataset_name):
+            resolved = resolve_gold_chunks(item, gold_index)
+            items_by_question[resolved.question.strip()] = resolved
+    return items_by_question
 
 
 def build_app_state(config_path: str) -> AppState:
     cfg = load_run_config(config_path)
+    gold_index = build_corpus_gold_index()
     return AppState(
         cfg=cfg,
         pipeline=RetrievalPipeline.from_config(cfg),
         llm=get_llm(cfg.generation.llm.provider, cfg.generation.llm.model),
         embedder=get_embedder(cfg.embedding.provider, cfg.embedding.model),
         prompt=PROMPTS[cfg.generation.prompt_version],
+        gold_index=gold_index,
+        eval_items_by_question=_load_eval_items_by_question(gold_index),
     )
 
 

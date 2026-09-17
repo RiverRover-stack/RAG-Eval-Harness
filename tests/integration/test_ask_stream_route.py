@@ -109,7 +109,9 @@ def test_ask_stream_event_order_and_final_citations(fake_embedder):
 
     done = json.loads(events[-1][1])
     assert done["answer"] == "FastAPI validates request bodies with Pydantic [1]."
-    assert done["citations"] == [{"index": 1, "chunk_id": "a", "url": "https://x/a"}]
+    assert done["citations"] == [
+        {"index": 1, "chunk_id": "a", "url": "https://x/a", "path": "a", "gold": False}
+    ]
     assert done["abstained"] is False
     assert done["usage"]["prompt_tokens"] == 10
     assert done["usage"]["completion_tokens"] == 5

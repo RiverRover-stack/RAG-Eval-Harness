@@ -21,8 +21,11 @@ deltas.
 from __future__ import annotations
 
 import json
+import random
 import uuid
 from collections.abc import AsyncIterator
+from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,9 +34,9 @@ from pydantic import BaseModel, Field
 
 from rag_eval.api.deps import AppState, get_app_state
 from rag_eval.api.rate_limit import check_daily_budget, rate_limit
-from rag_eval.common.telemetry import Usage, estimate_cost, log_request, timed
+from rag_eval.common.telemetry import Usage, estimate_cost, log_feedback, log_request, timed
 from rag_eval.config.run_config import config_hash
-from rag_eval.rag.citations import StreamingCitationScanner
+from rag_eval.rag.citations import Citation, StreamingCitationScanner
 from rag_eval.rag.generator import generate_cited_answer, score_answer
 from rag_eval.retrieval.base import Candidate
 
@@ -49,6 +52,8 @@ class CitationOut(BaseModel):
     index: int
     chunk_id: str
     url: str
+    path: str
+    gold: bool
 
 
 class UsageOut(BaseModel):
@@ -67,6 +72,38 @@ class AskResponse(BaseModel):
     abstained: bool
     usage: UsageOut
     latency_ms: float
+
+
+def _display_path(url: str) -> str:
+    """Short slug for a source tile's label, e.g. `tutorial/dependencies` or
+    `dependencies-with-yield` -- path plus fragment when both are present,
+    whichever half exists otherwise, falling back to the full url."""
+    parts = urlsplit(url)
+    path = parts.path.strip("/")
+    if parts.fragment:
+        path = f"{path}#{parts.fragment}" if path else parts.fragment
+    return path or url
+
+
+def _gold_chunk_ids(question: str, state: AppState) -> set[str]:
+    """Only ever populated for a question that exactly matches a loaded eval
+    item -- a free-typed question always gets an empty set, never a
+    fabricated gold match."""
+    item = state.eval_items_by_question.get(question.strip())
+    return set(item.gold_chunk_ids) if item else set()
+
+
+def _citation_payload(
+    citation: Citation, candidates_by_id: dict[str, Candidate], gold_chunk_ids: set[str]
+) -> dict:
+    candidate = candidates_by_id.get(citation.chunk_id)
+    return {
+        "index": citation.index,
+        "chunk_id": citation.chunk_id,
+        "url": citation.url,
+        "path": _display_path(candidate.url if candidate else citation.url),
+        "gold": citation.chunk_id in gold_chunk_ids,
+    }
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -98,12 +135,15 @@ def ask(req: AskRequest, state: AppState = Depends(get_app_state)) -> AskRespons
     )
     log_request(usage, request_id=request_id, endpoint="/api/ask", abstained=gen.abstained)
 
+    candidates_by_id = {c.chunk_id: c for c in result.candidates}
+    gold_chunk_ids = _gold_chunk_ids(req.question, state)
     return AskResponse(
         request_id=request_id,
         question=req.question,
         answer=gen.answer,
         citations=[
-            CitationOut(index=c.index, chunk_id=c.chunk_id, url=c.url) for c in gen.citations.citations
+            CitationOut(**_citation_payload(c, candidates_by_id, gold_chunk_ids))
+            for c in gen.citations.citations
         ],
         coverage=gen.citations.coverage,
         groundedness=gen.groundedness,
@@ -210,6 +250,8 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
     )
     log_request(usage, request_id=request_id, endpoint="/api/ask/stream", abstained=abstained)
 
+    candidates_by_id = {c.chunk_id: c for c in result.candidates}
+    gold_chunk_ids = _gold_chunk_ids(req.question, state)
     yield _sse(
         "done",
         {
@@ -217,7 +259,7 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
             "question": req.question,
             "answer": answer,
             "citations": [
-                {"index": c.index, "chunk_id": c.chunk_id, "url": c.url} for c in citations.citations
+                _citation_payload(c, candidates_by_id, gold_chunk_ids) for c in citations.citations
             ],
             "coverage": citations.coverage,
             "groundedness": groundedness,
@@ -245,3 +287,28 @@ async def ask_stream(req: AskRequest, state: AppState = Depends(get_app_state)) 
             "Cache-Control": "no-cache",
         },
     )
+
+
+class FeedbackRequest(BaseModel):
+    request_id: str = Field(..., max_length=64)
+    verdict: Literal["good", "bad"]
+
+
+@router.post("/feedback")
+def feedback(req: FeedbackRequest) -> dict:
+    log_feedback(request_id=req.request_id, verdict=req.verdict)
+    return {"ok": True}
+
+
+@router.get("/suggestions", response_model=list[str])
+def suggestions(n: int = 3, state: AppState = Depends(get_app_state)) -> list[str]:
+    """Real, gold-resolvable eval-set questions for the "Try" chips --
+    docs_synth_v1 preferred, topped up with discussions_v2 if there aren't
+    enough (see EVAL_DATASETS in api/deps.py for the load order)."""
+    n = max(0, n)
+    preferred = [
+        q for q, item in state.eval_items_by_question.items() if item.dataset == "docs_synth_v1"
+    ]
+    rest = [q for q, item in state.eval_items_by_question.items() if item.dataset != "docs_synth_v1"]
+    pool = preferred if len(preferred) >= n else preferred + rest
+    return random.sample(pool, min(n, len(pool)))

@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from rag_eval.api.deps import build_app_state
@@ -48,6 +49,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
     app = FastAPI(title="RAG Eval Harness API", lifespan=lifespan)
+
+    # Frontend dev server (`next dev`, :3000) talks to this API cross-origin
+    # (:8000); the exported static build served from StaticFiles below is
+    # same-origin and never needs this. Narrow allowlist, not "*".
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 
     app.include_router(health.bare_router)
 
