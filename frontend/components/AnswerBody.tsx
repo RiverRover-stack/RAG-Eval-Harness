@@ -23,7 +23,15 @@ function highlightCode(code: string): ReactNode[] {
   });
 }
 
-export function AnswerBody({ answer, citations }: { answer: string; citations: CitationOut[] }) {
+export function AnswerBody({
+  answer,
+  citations,
+  onCitationClick,
+}: {
+  answer: string;
+  citations: CitationOut[];
+  onCitationClick?: (chunkId: string) => void;
+}) {
   const blocks = splitAnswerBlocks(answer);
   return (
     <div className="flex flex-col gap-4 text-[15.5px] leading-[1.76] text-text">
@@ -36,7 +44,7 @@ export function AnswerBody({ answer, citations }: { answer: string; citations: C
             <code>{highlightCode(block.code)}</code>
           </pre>
         ) : (
-          <p key={i}>{renderAnswerInline(block.text, citations)}</p>
+          <p key={i}>{renderAnswerInline(block.text, citations, onCitationClick)}</p>
         )
       )}
     </div>

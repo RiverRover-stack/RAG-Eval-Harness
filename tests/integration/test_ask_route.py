@@ -258,6 +258,25 @@ def test_feedback_rejects_unknown_verdict():
     assert resp.status_code == 422
 
 
+def test_verdict_logs_and_returns_ok(monkeypatch):
+    import rag_eval.api.routes.ask as ask_route
+
+    calls = []
+    monkeypatch.setattr(
+        ask_route, "log_verdict", lambda *, request_id, verdict: calls.append((request_id, verdict))
+    )
+    resp = client.post("/api/verdict", json={"request_id": "r1", "verdict": "correct"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert calls == [("r1", "correct")]
+
+
+def test_verdict_rejects_unknown_verdict():
+    resp = client.post("/api/verdict", json={"request_id": "r1", "verdict": "meh"})
+    assert resp.status_code == 422
+
+
 def test_suggestions_returns_n_real_eval_questions(fake_embedder):
     from rag_eval.eval.gold import EvalItem
 
