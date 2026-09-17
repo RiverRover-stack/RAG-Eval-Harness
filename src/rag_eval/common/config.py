@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # can, so it never does.
     groq_api_key: str = ""
     gemini_api_key: str = ""
+    literouter_api_key: str = ""
 
     # HTTP request timeout for the Ollama provider -- the serving path, and
     # (when eval.judge.provider is "ollama") the judge.
