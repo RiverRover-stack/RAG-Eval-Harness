@@ -3,7 +3,14 @@ from datetime import UTC, datetime
 
 import pytest
 
-from rag_eval.common.telemetry import Usage, estimate_cost, log_request, read_stats, timed
+from rag_eval.common.telemetry import (
+    Usage,
+    estimate_cost,
+    log_feedback,
+    log_request,
+    read_stats,
+    timed,
+)
 
 
 def _usage(**overrides) -> Usage:
@@ -77,6 +84,29 @@ def test_log_request_records_abstained_flag(tmp_path):
     )
     row = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
     assert row["abstained"] is True
+
+
+def test_log_feedback_appends_a_json_line_to_the_dated_file(tmp_path):
+    now = datetime(2026, 8, 30, tzinfo=UTC)
+
+    path = log_feedback(request_id="r1", verdict="good", log_dir=tmp_path, now=now)
+
+    assert path == tmp_path / "feedback-2026-08-30.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert row["request_id"] == "r1"
+    assert row["verdict"] == "good"
+
+
+def test_log_feedback_appends_rather_than_overwrites(tmp_path):
+    now = datetime(2026, 8, 30, tzinfo=UTC)
+    log_feedback(request_id="r1", verdict="good", log_dir=tmp_path, now=now)
+    path = log_feedback(request_id="r2", verdict="bad", log_dir=tmp_path, now=now)
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[1])["verdict"] == "bad"
 
 
 def test_read_stats_on_empty_log_dir_is_all_zero(tmp_path):

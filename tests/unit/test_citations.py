@@ -34,6 +34,16 @@ def test_extract_citations_ignores_index_with_no_candidate():
     assert extract_citations(answer, CANDIDATES) == []
 
 
+def test_extract_citations_handles_fullwidth_brackets():
+    # Groq/Llama occasionally emits 【n】 instead of the prompted [n].
+    answer = "FastAPI is fast 【1】."
+    citations = extract_citations(answer, CANDIDATES)
+
+    assert len(citations) == 1
+    assert citations[0].index == 1
+    assert citations[0].chunk_id == "a"
+
+
 def test_validate_citations_reports_unknown_indices():
     answer = "Known [1]. Unknown [7]."
     report = validate_citations(answer, CANDIDATES)
@@ -102,3 +112,13 @@ def test_streaming_scanner_handles_arbitrary_chunk_boundaries():
 def test_streaming_scanner_ignores_unknown_index():
     scanner = StreamingCitationScanner(CANDIDATES)
     assert scanner.feed("Cites nothing real [9].") == []
+
+
+def test_streaming_scanner_reassembles_a_fullwidth_marker_split_across_feeds():
+    scanner = StreamingCitationScanner(CANDIDATES)
+
+    assert scanner.feed("FastAPI is fast 【") == []
+    citations = scanner.feed("1】.")
+
+    assert [c.index for c in citations] == [1]
+    assert [c.chunk_id for c in citations] == ["a"]

@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* Design tokens -- per the agreed design brief */
+:root {
+  --bg: #0d0d10;
+  --surface: #17171b;
+  --border: #2a2b30;
+  --text: #e8e6e1;
+  --text-dim: #8c8a85;
+  --accent-signal: #3fc7b0;
+  --accent-gold: #d6a94a;
+  --success: #5fbf77;
+  --danger: #e0654f;
+  --row-highlight: #1f1f24;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-accent-signal: var(--accent-signal);
+  --color-accent-gold: var(--accent-gold);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-row-highlight: var(--row-highlight);
+  --font-sans: var(--font-ibm-plex-sans);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), sans-serif;
+}
+
+/* Retrieving-state skeleton bars: 1.4s ease-in-out pulse between the exact
+   opacity values specified (0.35 - 0.7) -- Tailwind's built-in
+   animate-pulse uses different timing/opacity. */
+@keyframes pulse-skeleton {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.animate-pulse-skeleton {
+  animation: pulse-skeleton 1.4s ease-in-out infinite;
+}

@@ -64,13 +64,14 @@ def _candidate(chunk_id: str, content: str, url: str) -> Candidate:
     return Candidate(chunk_id=chunk_id, content=content, url=url, title="t", source_type="docs")
 
 
-def _override_state(pipeline: FakePipeline, llm: FakeLLM, fake_embedder) -> AppState:
+def _override_state(pipeline: FakePipeline, llm: FakeLLM, fake_embedder, **extra) -> AppState:
     return AppState(
         cfg=RunConfig(name="test"),
         pipeline=pipeline,
         llm=llm,
         embedder=fake_embedder,
         prompt=PROMPTS["v2-cited"],
+        **extra,
     )
 
 
@@ -87,7 +88,9 @@ def test_ask_returns_answer_with_citations_and_usage(fake_embedder):
     assert resp.status_code == 200
     body = resp.json()
     assert body["answer"] == "FastAPI validates request bodies with Pydantic [1]."
-    assert body["citations"] == [{"index": 1, "chunk_id": "a", "url": "https://x/a"}]
+    assert body["citations"] == [
+        {"index": 1, "chunk_id": "a", "url": "https://x/a", "path": "a", "gold": False}
+    ]
     assert body["abstained"] is False
     assert body["usage"]["prompt_tokens"] == 10
     assert body["usage"]["completion_tokens"] == 5
@@ -120,6 +123,50 @@ def test_ask_rejects_empty_question(fake_embedder):
         app.dependency_overrides.clear()
 
     assert resp.status_code == 422
+
+
+def test_ask_marks_citation_gold_only_for_a_matched_eval_item(fake_embedder):
+    from rag_eval.eval.gold import EvalItem
+
+    candidates = [_candidate("a", "FastAPI validates request bodies with Pydantic.", "https://x/a")]
+    pipeline = FakePipeline(candidates)
+    llm = FakeLLM("FastAPI validates request bodies with Pydantic [1].")
+    item = EvalItem(
+        id="1", dataset="docs_synth_v1", question="How does FastAPI validate bodies?", gold_chunk_ids=["a"]
+    )
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        pipeline, llm, fake_embedder, eval_items_by_question={item.question: item}
+    )
+    try:
+        resp = client.post("/api/ask", json={"question": "How does FastAPI validate bodies?"})
+    finally:
+        app.dependency_overrides.clear()
+
+    body = resp.json()
+    assert body["citations"] == [
+        {"index": 1, "chunk_id": "a", "url": "https://x/a", "path": "a", "gold": True}
+    ]
+
+
+def test_ask_never_fabricates_gold_for_an_unmatched_question(fake_embedder):
+    from rag_eval.eval.gold import EvalItem
+
+    candidates = [_candidate("a", "FastAPI validates request bodies with Pydantic.", "https://x/a")]
+    pipeline = FakePipeline(candidates)
+    llm = FakeLLM("FastAPI validates request bodies with Pydantic [1].")
+    # gold_chunk_ids=["a"] under a *different* question -- proves an
+    # unmatched free-typed question never inherits another item's gold set.
+    item = EvalItem(id="1", dataset="docs_synth_v1", question="some other question", gold_chunk_ids=["a"])
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        pipeline, llm, fake_embedder, eval_items_by_question={item.question: item}
+    )
+    try:
+        resp = client.post("/api/ask", json={"question": "How does FastAPI validate bodies?"})
+    finally:
+        app.dependency_overrides.clear()
+
+    body = resp.json()
+    assert body["citations"][0]["gold"] is False
 
 
 def test_ask_without_backend_returns_503():
@@ -190,3 +237,76 @@ def test_ask_returns_402_when_daily_budget_exhausted(fake_embedder):
         app.dependency_overrides.clear()
 
     assert resp.status_code == 402
+
+
+def test_feedback_logs_and_returns_ok(monkeypatch):
+    import rag_eval.api.routes.ask as ask_route
+
+    calls = []
+    monkeypatch.setattr(
+        ask_route, "log_feedback", lambda *, request_id, verdict: calls.append((request_id, verdict))
+    )
+    resp = client.post("/api/feedback", json={"request_id": "r1", "verdict": "good"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert calls == [("r1", "good")]
+
+
+def test_feedback_rejects_unknown_verdict():
+    resp = client.post("/api/feedback", json={"request_id": "r1", "verdict": "meh"})
+    assert resp.status_code == 422
+
+
+def test_suggestions_returns_n_real_eval_questions(fake_embedder):
+    from rag_eval.eval.gold import EvalItem
+
+    items = {
+        f"q{i}": EvalItem(id=str(i), dataset="docs_synth_v1", question=f"q{i}") for i in range(5)
+    }
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        FakePipeline([]), FakeLLM("answer"), fake_embedder, eval_items_by_question=items
+    )
+    try:
+        resp = client.get("/api/suggestions?n=3")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 3
+    assert set(body).issubset(items)
+
+
+def test_suggestions_prefers_docs_synth_v1_over_discussions_v2(fake_embedder):
+    from rag_eval.eval.gold import EvalItem
+
+    items = {
+        "docs-q": EvalItem(id="1", dataset="docs_synth_v1", question="docs-q"),
+        "disc-q": EvalItem(id="2", dataset="discussions_v2", question="disc-q"),
+    }
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        FakePipeline([]), FakeLLM("answer"), fake_embedder, eval_items_by_question=items
+    )
+    try:
+        resp = client.get("/api/suggestions?n=1")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.json() == ["docs-q"]
+
+
+def test_suggestions_clamps_negative_n_instead_of_raising(fake_embedder):
+    from rag_eval.eval.gold import EvalItem
+
+    items = {"docs-q": EvalItem(id="1", dataset="docs_synth_v1", question="docs-q")}
+    app.dependency_overrides[get_app_state] = lambda: _override_state(
+        FakePipeline([]), FakeLLM("answer"), fake_embedder, eval_items_by_question=items
+    )
+    try:
+        resp = client.get("/api/suggestions?n=-1")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json() == []
