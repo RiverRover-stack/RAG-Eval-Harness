@@ -21,14 +21,6 @@ runs/*
 !runs/leaderboard.json
 !runs/baseline.json
 
-# Private project knowledge base -- not for GitHub. docs/plan.md and
-# docs/adr/ stay tracked; these are local-only notes.
-docs/PROJECT.md
-docs/ARCHITECTURE.md
-docs/DECISIONS.md
-docs/EXPERIMENTS.md
-docs/AI Project Documentation Strategy & Workflow.md
-
 # Claude Code's own local subagent memory -- not project source.
 .claude/agent-memory/
 
