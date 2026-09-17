@@ -46,7 +46,6 @@
   reintroduce this silently. `ruff`/`mypy`/pytest reverified — **355
   passed**.
 
-## In progress
 - **2026-09-18 — Stage pills collapsed from 4 to 3, per your call**: you
   found the panel showing identical data across all four pills twice --
   once because `configs/deploy.yaml` (the local server's default) has
@@ -59,65 +58,51 @@
   (also not a bug, just two controls for one dataset). You chose to merge
   `Embed`+`Dense 50` into a single `Dense` pill rather than keep the
   spec's 4-pill layout -- a deliberate deviation from the design brief.
-  Changed: `lib/evalPanel.ts` (`STAGE_LABELS`, `activeCandidates`,
-  `scoreFor` threshold `stage < 2` -> `stage < 1`), `components/
-  EvalPanel.tsx` (`showingDense` threshold), `lib/reducer.ts`/`lib/
-  types.ts`/`app/page.tsx` (default/reset stage `2` -> `1`, still "Rerank
-  8", now at index 1 of 3 instead of 2 of 4). `RetrievingState.tsx`'s own
-  4-phase loading-text labels (`Turn.stageIndex`, a separate mechanism)
-  were deliberately left untouched -- unrelated to the eval panel's stage
-  pills. Reducer/evalPanel tests updated to match (23 passed). `lint`/
-  `tsc --noEmit`/`test`/`build` all green.
-- PR2 (evaluation panel) built on `feat/phase9-pr2-eval-panel`, off
-  current `main` (which already has PR1's chat-only console merged).
-  Backend: `dense_candidates` on `RetrievalResult`/`RetrievalPipeline`
+  Reviewer subagent verdict on this delta: **ship**, risk **low**, no
+  fixes needed. Reducer/evalPanel tests updated to match (23 passed).
+- **2026-09-18 — PR2 committed, pushed, PR opened**: `feat/phase9-pr2-eval-
+  panel` (22 files, +1046/-57), commit `35c36d5`. Backend:
+  `dense_candidates` on `RetrievalResult`/`RetrievalPipeline`
   (`retrieval/base.py`, `retrieval/pipeline.py`) so the pre-rerank pool is
-  real data, not a re-derivation; `_candidate_out()` now sends `gold` and
-  `content`; the `retrieval` SSE event sends `dense_candidates` alongside
-  `candidates`; new `POST /api/verdict` + `log_verdict()`
-  (`common/telemetry.py`) mirroring `POST /api/feedback` exactly, logged
-  to a separate `verdict-*.jsonl`. Frontend: header view switch, `stage`/
-  `openRow`/`view`/`reviewerVerdicts` on `AskState`, `lib/evalPanel.ts`
-  (pure chunk-row/gold-metric derivation, unit-tested), new
-  `components/EvalPanel.tsx`, `SourceTile` now opens the panel on the
-  matching chunk row instead of a new tab (PR1 stopgap, per its own
-  "Assumptions" note), header gate indicator fixed to track
-  `state.activeId` instead of `.at(-1)`. Not yet committed, pushed, or
-  opened as a PR -- waiting on your go-ahead per the merge policy.
-  `HANDOFF.md` deleted per its own last line, once PR2 was built.
+  real data, not a re-derivation, captured as an independent snapshot so
+  the reranker's in-place mutation can't contaminate it; `_candidate_out()`
+  now sends `gold` and `content`; the `retrieval` SSE event sends
+  `dense_candidates` alongside `candidates`; new `POST /api/verdict` +
+  `log_verdict()` (`common/telemetry.py`) mirroring `POST /api/feedback`
+  exactly, logged to a separate `verdict-*.jsonl`. Frontend: header view
+  switch, `stage`/`openRow`/`view`/`reviewerVerdicts` on `AskState`,
+  `lib/evalPanel.ts` (pure chunk-row/gold-metric derivation, unit-tested),
+  new `components/EvalPanel.tsx` (3 stage pills: Dense/Rerank 8/Answer),
+  `SourceTile` now opens the panel on the matching chunk row instead of a
+  new tab (PR1 stopgap), header gate indicator fixed to track
+  `state.activeId` instead of `.at(-1)`. `HANDOFF.md` deleted per its own
+  last line. PR: https://github.com/RiverRover-stack/RAG-Eval-Harness/pull/54
+  -- open, awaiting CI + your merge.
+- **2026-09-18 — Citation fullwidth-bracket render fix, committed and
+  pushed** (separate branch `fix/inline-citation-fullwidth-brackets`,
+  commit `e783009`, kept apart from PR2 per your one-PR-per-logical-change
+  call): widened `frontend/lib/inline.tsx`'s render regex to accept `【n】`
+  as well as `[n]`, mirroring the backend's existing `_CITATION_RE`. Added
+  `lib/inline.test.tsx` (6 cases) plus the `@/` alias and JSX-transform
+  config `vitest.config.ts` needed to test component code for the first
+  time. Reviewer subagent verdict: **ship**, risk **low**, one comment nit
+  (fixed). Pushed, **no PR opened yet** -- only explicitly asked to push
+  this one; say the word and I'll open it too.
+
+## In progress
+(nothing active right now -- both PR2 and the citation fix are pushed;
+see "Needs your call" for what's waiting on you.)
 
 ## Needs your call
-- **2026-09-18 — Diff review for PR2, go-ahead to commit/push/open PR**:
-  reviewer subagent verdict **ship after fixes**, risk **low-medium**, one
-  real finding (the `dense_candidates`/reranker-mutation aliasing bug,
-  detailed above under Done — now fixed and reverified, 355 passed).
-  Everything else the reviewer checked came back clean: gold-flagging
-  unchanged and still leak-free, `POST /api/verdict`/`log_verdict()` exact
-  mirrors of the existing feedback pattern, reducer/`activeId` correctness
-  verified including the null-`activeId`-on-first-load case, no secrets/
-  design-brief-folder/build output staged. Not yet committed, pushed, or
-  opened as a PR; waiting on your go-ahead per the merge policy.
+- **Merge PR #54** (Phase 9 PR2, the evaluation panel) once CI is green --
+  see above for what's in it.
+- **Open + merge a PR for `fix/inline-citation-fullwidth-brackets`** --
+  pushed but no PR opened yet (only asked to push).
 - **Docs system update** (reviewer finding from PR1, not a code defect):
   your standing instruction is to update
   `docs/{PROJECT,ARCHITECTURE,DECISIONS,EXPERIMENTS}.md` per milestone
-  without being asked; still outstanding. Want that done now, alongside
-  PR2, or after PR1 and PR2 both land?
-- **Pre-existing bug observed while manually testing PR2, not caused by
-  this change**: Groq sometimes emits fullwidth citation brackets
-  (`【1】`) in the *final* answer text even though `rag/citations.py`'s
-  `_CITATION_RE` already recognizes both bracket styles for citation
-  *extraction* (a PR1 fix, see the dated entry above) -- the answer text
-  itself is never rewritten to the ASCII form, and the frontend's
-  `renderAnswerInline` marker regex (`lib/inline.tsx`) only matches
-  `[\d+]`, so those citations render as literal bracket text instead of a
-  clickable `SourceTile`. Confirmed the citation is still tracked
-  correctly server-side (shows up gold/cited in the eval panel's chunk
-  list) -- this is purely a missed-render case for the inline pill,
-  observed on roughly half the eval questions tried during manual
-  verification. Left out of PR2's scope (not part of the brief, and
-  fixing it means touching either the prompt/generation path or widening
-  the frontend regex, both outside "build the eval panel") -- flagging so
-  it doesn't get mistaken for a PR2 regression later.
+  without being asked; still outstanding. Want that done now, or after
+  PR1/PR2/the citation fix all land?
 - **Left untouched, not part of this PR**: untracked
   `src/rag_eval/providers/llm/literouter.py` +
   `configs/experiments/gen_hybrid_literouter.yaml` — pre-existing,
