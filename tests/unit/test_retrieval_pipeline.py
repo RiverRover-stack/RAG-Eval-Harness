@@ -41,6 +41,20 @@ class SpyReranker:
         return candidates[:top_n]
 
 
+class MutatingReranker:
+    """Mirrors FastEmbedReranker.rerank's real behaviour: mutates the
+    survivors' scores/ranks/stages in place rather than building new
+    Candidate objects."""
+
+    def rerank(self, query, candidates, top_n):
+        survivors = candidates[:top_n]
+        for rank, c in enumerate(survivors):
+            c.scores["rerank"] = 0.42
+            c.ranks["rerank"] = rank
+            c.stages.append("rerank")
+        return survivors
+
+
 class SpyRewriter:
     def __init__(self, rewrites: list[str]):
         self.rewrites = rewrites
@@ -115,6 +129,52 @@ def test_rerank_not_called_when_not_wired():
 
     assert "rerank" not in result.stage_counts
     assert len(result.candidates) == 2
+
+
+def test_dense_candidates_equals_candidates_when_no_reranker():
+    dense = SpySearcher([_cand("a"), _cand("b")])
+    pipeline = RetrievalPipeline(top_k=5, candidates_k=10, dense=dense, reranker=None)
+
+    result = pipeline.retrieve("q")
+
+    assert [c.chunk_id for c in result.dense_candidates] == ["a", "b"]
+    assert [c.chunk_id for c in result.candidates] == ["a", "b"]
+
+
+def test_dense_candidates_holds_the_pre_rerank_pool_when_reranked():
+    dense = SpySearcher([_cand("a", score=0.9), _cand("b", score=0.5)])
+    reranker = SpyReranker()
+    pipeline = RetrievalPipeline(top_k=5, candidates_k=10, dense=dense, reranker=reranker, rerank_top_n=1)
+
+    result = pipeline.retrieve("q")
+
+    # dense_candidates keeps the full pre-rerank pool even though the
+    # reranker (and rerank_top_n=1) narrowed the final `candidates` down.
+    assert [c.chunk_id for c in result.dense_candidates] == ["a", "b"]
+    assert [c.chunk_id for c in result.candidates] == ["a"]
+
+
+def test_dense_candidates_are_not_mutated_by_in_place_reranking():
+    # Regression: the real FastEmbedReranker mutates surviving candidates'
+    # scores/ranks/stages in place (see rerank.py). dense_candidates must be
+    # an independent snapshot (new objects, copied mutable fields), not a
+    # list() of the same references -- otherwise reranking silently
+    # contaminates the "pre-rerank" pool it's supposed to preserve.
+    dense = SpySearcher([_cand("a", score=0.9), _cand("b", score=0.5)])
+    pipeline = RetrievalPipeline(
+        top_k=5, candidates_k=10, dense=dense, reranker=MutatingReranker(), rerank_top_n=2
+    )
+
+    result = pipeline.retrieve("q")
+
+    dense_a = next(c for c in result.dense_candidates if c.chunk_id == "a")
+    reranked_a = next(c for c in result.candidates if c.chunk_id == "a")
+
+    assert "rerank" in reranked_a.stages
+    assert "rerank" in reranked_a.scores
+    assert "rerank" not in dense_a.stages
+    assert "rerank" not in dense_a.scores
+    assert "rerank" not in dense_a.ranks
 
 
 def test_expander_only_called_when_wired():

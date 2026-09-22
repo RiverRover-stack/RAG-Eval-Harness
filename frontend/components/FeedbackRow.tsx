@@ -1,9 +1,13 @@
 export function FeedbackRow({
   verdict,
   onVerdict,
+  onShowEvaluation,
 }: {
   verdict: "good" | "bad" | undefined;
   onVerdict: (v: "good" | "bad") => void;
+  // Omitted (undefined) while the evaluation panel is already open --
+  // the link only ever makes sense as a way to open it (design brief).
+  onShowEvaluation?: () => void;
 }) {
   const prompt =
     verdict === "good"
@@ -31,6 +35,11 @@ export function FeedbackRow({
       >
         No
       </button>
+      {onShowEvaluation && (
+        <button onClick={onShowEvaluation} className="ml-auto text-[12.5px] text-accent-signal">
+          Show evaluation
+        </button>
+      )}
     </div>
   );
 }

@@ -27,9 +27,31 @@ export interface DonePayload {
   latency_ms: number;
 }
 
+// Mirrors ask.py's `_candidate_out()` -- one entry per retrieved chunk, sent
+// in the `retrieval` SSE event for both the reranked `candidates` list and
+// the pre-rerank `dense_candidates` pool.
+export interface CandidateOut {
+  chunk_id: string;
+  url: string;
+  title: string;
+  source_type: string;
+  content: string;
+  scores: Record<string, number>;
+  ranks: Record<string, number>;
+  stages: string[];
+  gold: boolean;
+}
+
 export type SSEEvent =
   | { event: "meta"; data: { request_id: string; config_hash: string; k: number } }
-  | { event: "retrieval"; data: { candidates: unknown[]; timings: Record<string, number> } }
+  | {
+      event: "retrieval";
+      data: {
+        candidates: CandidateOut[];
+        dense_candidates: CandidateOut[];
+        timings: Record<string, number>;
+      };
+    }
   | { event: "token"; data: { t: string } }
   | {
       event: "citation";
@@ -56,6 +78,10 @@ export interface Turn {
   groundedness: number | null;
   abstained: boolean;
   errorDetail: string | null;
+  // From the `retrieval` SSE event -- reranked top-N and the pre-rerank
+  // candidate pool, respectively. Empty until that event arrives.
+  candidates: CandidateOut[];
+  denseCandidates: CandidateOut[];
 }
 
 export interface AskState {
@@ -63,4 +89,11 @@ export interface AskState {
   activeId: string | null;
   draft: string;
   verdicts: Record<string, "good" | "bad">;
+  // Evaluation panel state (design brief's State Management section).
+  view: "chat" | "eval";
+  stage: number; // 0..2 ("Dense"/"Rerank 8"/"Answer"), default 1 ("Rerank 8"); stage < 1 means "show dense candidates"
+  openRow: string | null; // "<turnId>:<rank>"
+  // Reviewer Correct/Wrong verdicts, kept separate from the end-user
+  // Yes/No `verdicts` map above -- the two audiences must never merge.
+  reviewerVerdicts: Record<string, "correct" | "wrong">;
 }

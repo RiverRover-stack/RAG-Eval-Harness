@@ -28,7 +28,11 @@ export function renderInlineCode(text: string, codeClassName: string): ReactNode
   );
 }
 
-export function renderAnswerInline(text: string, citations: CitationOut[]): ReactNode[] {
+export function renderAnswerInline(
+  text: string,
+  citations: CitationOut[],
+  onCitationClick?: (chunkId: string) => void
+): ReactNode[] {
   const byIndex = new Map(citations.map((c) => [c.index, c]));
   return text.split(/(`[^`]+`|[\[【]\d+[\]】])/g).map((part, i) => {
     if (part.length > 1 && part.startsWith("`") && part.endsWith("`")) {
@@ -44,7 +48,9 @@ export function renderAnswerInline(text: string, citations: CitationOut[]): Reac
       // An unknown/unresolved index drops silently rather than leaking a
       // raw "[n]" into prose -- validate_citations() already excludes these
       // from the model's own coverage score.
-      return citation ? <SourceTile key={i} citation={citation} /> : null;
+      return citation ? (
+        <SourceTile key={i} citation={citation} onClick={() => onCitationClick?.(citation.chunk_id)} />
+      ) : null;
     }
     return <span key={i}>{part}</span>;
   });
