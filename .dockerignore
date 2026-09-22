@@ -13,9 +13,21 @@ __pycache__
 
 /data/raw
 /data/processed
-/data/eval_sets
 /runs
-/frontend
+/frontend/node_modules
+/frontend/.next
+/frontend/out
+# Docker's dockerignore patterns aren't recursive like gitignore's --
+# `.env.*` above only matches a root-level file, not `frontend/.env.local`
+# -- so that local dev convenience file (points `next build` at
+# localhost:8000 for `make serve`) was silently leaking into the image and
+# getting baked into the static export as an absolute, wrong API origin.
+# Glob covers the whole Next.js env-file convention (.env,
+# .env.development[.local], .env.test[.local], .env.production.local, ...),
+# not just the one filename that happened to leak -- a future .env.test.local
+# would otherwise reintroduce the exact same bug silently.
+/frontend/.env*
+!/frontend/.env.local.example
 /notebooks
 /tests
 /docs

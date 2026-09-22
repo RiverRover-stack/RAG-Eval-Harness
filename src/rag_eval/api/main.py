@@ -1,9 +1,12 @@
 """FastAPI app factory (docs/plan.md Phase 7), plus the built static frontend.
 
-The frontend is `deploy/web-placeholder/` until Phase 9's Next.js export
-replaces it. `StaticFiles` is mounted at "/" *last*, after `/health` and
-the `/api` router are registered, so route order doesn't let the catch-all
-static mount shadow the API -- see test_static_mount.py.
+The Docker image builds the real Next.js export (Phase 9) and serves it via
+`STATIC_DIR=/app/deploy/web`. `deploy/web-placeholder/` is only the fallback
+`STATIC_DIR` default below, for running bare `uvicorn` locally without a
+Docker build and without a `STATIC_DIR` override. `StaticFiles` is mounted
+at "/" *last*, after `/health` and the `/api` router are registered, so
+route order doesn't let the catch-all static mount shadow the API -- see
+test_static_mount.py.
 
 The RAG backend (RunConfig -> RetrievalPipeline -> LLM/embedder/prompt,
 api/deps.py) is built once in `lifespan`, not per-request, and warms the

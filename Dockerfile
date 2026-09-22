@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Four stages (docs/plan.md Phase 3):
-#   web     -> placeholder static site (becomes the Next.js export in Phase 9)
+#   web     -> the real Next.js static export (Phase 9)
 #   deps    -> python dependencies via uv, frozen from uv.lock
 #   index   -> bakes the Chroma index from the committed corpus snapshot
 #              (see docs/adr/0005-bake-index-at-build-time.md)
@@ -9,7 +9,10 @@
 
 FROM node:20-slim AS web
 WORKDIR /web
-COPY deploy/web-placeholder/ ./out/
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
 
 FROM python:3.11-slim AS deps
 RUN pip install --no-cache-dir uv
@@ -38,16 +41,19 @@ RUN useradd --uid 1000 --create-home appuser
 WORKDIR /app
 COPY --from=deps /app/.venv /app/.venv
 COPY --from=index /app/data/processed /app/data/processed
-COPY --from=index /app/data/corpus/SNAPSHOT.json data/corpus/SNAPSHOT.json
-COPY --from=web /web/out /app/deploy/web-placeholder
+COPY --from=index /app/data/corpus/ data/corpus/
+COPY --from=web /web/out /app/deploy/web
 COPY src/ src/
 COPY configs/ configs/
+# Needed at *serving* time, not just index-bake time: deps.py's
+# build_app_state() loads docs_synth_v1/discussions_v2 for gold-aware
+# citations and the suggestion chips -- without this the app boots
+# "degraded" (see /api/health/ready) and every /api/ask* call 503s.
+COPY data/eval_sets/ data/eval_sets/
 ENV PATH="/app/.venv/bin:$PATH" \
     CHROMA_PERSIST_DIR=/app/data/processed/chroma \
     FASTEMBED_CACHE_DIR=/app/data/processed/fastembed \
-    STATIC_DIR=/app/deploy/web-placeholder \
-    RAG_LLM_PROVIDER=groq \
-    RAG_LLM_MODEL=llama-3.3-70b-versatile \
+    STATIC_DIR=/app/deploy/web \
     PORT=7860
 RUN chown -R appuser:appuser /app
 USER appuser

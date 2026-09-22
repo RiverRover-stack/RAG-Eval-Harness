@@ -90,14 +90,106 @@
   this one; say the word and I'll open it too.
 
 ## In progress
-(nothing active right now -- both PR2 and the citation fix are pushed;
-see "Needs your call" for what's waiting on you.)
+- **2026-09-22 — Real Next.js frontend wired into the Docker deploy image**,
+  branch `infra/deploy-real-frontend` off `origin/main` (not committed yet).
+  `Dockerfile`'s `web` stage now actually builds `frontend/` (`npm ci` +
+  `npm run build`) instead of copying the static placeholder;
+  `.dockerignore`'s blanket `/frontend` line narrowed to just
+  `node_modules`/`.next`/`out` so the build context includes frontend
+  source. Runtime stage copies the Next export to a new path
+  (`/app/deploy/web`, `STATIC_DIR` updated to match) rather than
+  overwriting `deploy/web-placeholder/`, which stays as-is for the bare
+  `uvicorn`-with-no-`STATIC_DIR` local fallback (`main.py`'s default,
+  docstring updated to say so, no logic changed). Removed
+  `RAG_LLM_PROVIDER`/`RAG_LLM_MODEL` from the runtime `ENV` block after
+  confirming by repo-wide grep they're read nowhere -- model choice is
+  entirely `RunConfig`-driven per `configs/deploy.yaml`, matching this
+  file's config-discipline rule.
+  Verified: `docker build` succeeds end-to-end (frontend compiles, 987+112
+  chunks indexed into Chroma); ran the built image and confirmed `/` serves
+  the real app (`<title>FastAPI Docs Assistant</title>`, `_next/static`
+  chunks, not the placeholder stub), `/api/health` -> `{"status":"ok"}`,
+  `/api/health/ready` -> `{"ready":true}`; test container/image removed
+  after. `make lint type test` -- 355 passed, ruff and mypy clean.
+  First reviewer subagent pass: **ship**, risk low, no findings (independently
+  rebuilt/ran the image and confirmed the same things).
+- **2026-09-22 — You actually tested it and found two more real bugs**, both
+  pre-existing (not introduced by the frontend-wiring change above, just
+  never hit until a real browser test happened):
+  1. Asking a question in the browser failed with `Failed to fetch` (a
+     network-level failure, not an HTTP error -- curl to the same URL got a
+     clean response). Root cause: `.dockerignore`'s `.env` / `.env.*` rule
+     is **not recursive** (Docker's dockerignore patterns, unlike
+     gitignore's, only match at the context root unless prefixed `**/`) --
+     so your local `frontend/.env.local` (a `next dev` convenience file
+     pointing at `localhost:8000`) slipped into the Docker build context
+     and got baked into the static export as an absolute
+     `NEXT_PUBLIC_API_BASE_URL`, instead of the intended same-origin `""`.
+     The browser then tried to fetch a cross-origin `localhost:8000` that
+     had nothing listening. Fixed: added explicit
+     `/frontend/.env.local` + `/frontend/.env.production.local` lines to
+     `.dockerignore`. Confirmed via `docker exec ... grep -rl
+     localhost:8000 /app/deploy/web` -- no match after the fix.
+  2. Next error was a clean `503` (`RAG backend unavailable`) -- worse, a
+     genuinely broken RAG backend the whole time, unrelated to the
+     frontend work. Container logs showed `build_app_state()`
+     (`api/deps.py`) throwing at startup on two missing files:
+     `data/corpus/discussions.json` (the `runtime` stage only ever copied
+     `SNAPSHOT.json` out of the `index` stage's full `data/corpus/`, never
+     the rest) and `data/eval_sets/docs_synth_v1.jsonl` /
+     `discussions_v2.jsonl` (the `docs_synth_v1`/`discussions_v2` eval
+     sets `deps.py` loads for gold-aware citations and the suggestion
+     chips -- these are committed to git but `.dockerignore` explicitly
+     excluded `/data/eval_sets` from the build context entirely, and
+     nothing ever `COPY`'d them in). Both are **pre-existing bugs, not
+     caused by this branch** -- the Dockerfile's original placeholder-only
+     version never exercised `build_app_state()`'s eval-item loading path
+     in a way anyone tested against a real container before now, so this
+     was latent since whenever that `deps.py` logic first shipped (Phase
+     7/9). If the live Render service has ever actually served a real
+     `/api/ask` request, it's plausible it's been 503ing there too.
+     Fixed: `runtime` stage now does
+     `COPY --from=index /app/data/corpus/ data/corpus/` (whole directory,
+     not just the snapshot) and a new `COPY data/eval_sets/
+     data/eval_sets/`; `.dockerignore`'s `/data/eval_sets` exclusion
+     removed.
+  Reverified end-to-end after both fixes: `/api/health/ready` ->
+  `{"ready":true}` with **no startup traceback** in the logs (first time);
+  a real `curl POST /api/ask/stream` returned a genuine `meta` -> `retrieval`
+  SSE sequence with real retrieved chunks. `make lint type test` reverified
+  -- 355 passed. Not committed, pushed, or PR'd yet -- a second reviewer
+  pass on the updated diff and your go-ahead are next.
+
+- **2026-09-22 — PR #53 (citation fullwidth-bracket render fix) and PR #54
+  (Phase 9 PR2, eval panel) are both merged.** (The two "needs your call"
+  items about opening/merging them were stale as of this line -- corrected
+  here rather than left to confuse the next read.)
+- **2026-09-22 — Second reviewer pass on `infra/deploy-real-frontend`:
+  verdict needs-changes, risk low-medium**, one real finding: the
+  `.dockerignore` fix for the `frontend/.env.local` leak (see "In progress"
+  above) stopped only that one exact filename, not the whole Next.js
+  env-file convention (`.env`, `.env.development[.local]`, `.env.test*`,
+  etc.) -- confirmed empirically both ways with scratch
+  `docker buildx build --output type=local` context exports. **Fixed**:
+  swapped the two explicit lines for `/frontend/.env*` +
+  `!/frontend/.env.local.example`; re-verified with the same export
+  technique -- only `.env.local.example` reaches the build context now,
+  `.env.local` does not. Everything else in that reviewer pass had already
+  checked out clean (config-discipline on the removed env vars, no
+  secrets/oversized files in `data/corpus/`, layer-caching order). `make
+  lint type test` reverified again after this fix -- 355 passed.
+- **2026-09-22 — Found and fixed a local-only `.env` bug** while
+  diagnosing a Groq `401 Unauthorized` you hit running the Docker image:
+  `GROQ_API_KEY` (and `GITHUB_TOKEN`/`GEMINI_API_KEY`/`LITEROUTER_API_KEY`)
+  were quoted (`KEY="value"`) in your gitignored local `.env`. Python's
+  dotenv loader strips quotes (works fine outside Docker), but `docker run
+  --env-file .env` does not -- it passed the literal quote characters as
+  part of the bearer token, which Groq correctly rejected. Stripped the
+  quotes from all four values locally (verified identical key
+  prefix/length before and after); `.env.example` was already unquoted, so
+  no repo change needed. Not a code bug, nothing to commit.
 
 ## Needs your call
-- **Merge PR #54** (Phase 9 PR2, the evaluation panel) once CI is green --
-  see above for what's in it.
-- **Open + merge a PR for `fix/inline-citation-fullwidth-brackets`** --
-  pushed but no PR opened yet (only asked to push).
 - **Docs system update** (reviewer finding from PR1, not a code defect):
   your standing instruction is to update
   `docs/{PROJECT,ARCHITECTURE,DECISIONS,EXPERIMENTS}.md` per milestone
