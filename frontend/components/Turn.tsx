@@ -9,11 +9,17 @@ export function TurnView({
   verdict,
   onVerdict,
   isLast,
+  onCitationClick,
+  showEvalLink,
+  onShowEvaluation,
 }: {
   turn: TurnState;
   verdict: "good" | "bad" | undefined;
   onVerdict: (v: "good" | "bad") => void;
   isLast: boolean;
+  onCitationClick: (chunkId: string) => void;
+  showEvalLink: boolean;
+  onShowEvaluation: () => void;
 }) {
   return (
     <div className={isLast ? "" : "pb-[26px] mb-[26px] border-b border-border"}>
@@ -29,8 +35,15 @@ export function TurnView({
           <AnswerBody
             answer={turn.status === "streaming" ? turn.streamedText : turn.answer}
             citations={turn.citations}
+            onCitationClick={onCitationClick}
           />
-          {turn.status === "done" && <FeedbackRow verdict={verdict} onVerdict={onVerdict} />}
+          {turn.status === "done" && (
+            <FeedbackRow
+              verdict={verdict}
+              onVerdict={onVerdict}
+              onShowEvaluation={showEvalLink ? onShowEvaluation : undefined}
+            />
+          )}
         </>
       )}
     </div>

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Set as AbstractSet
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from rag_eval.retrieval.base import Candidate, RetrievalResult
@@ -154,6 +154,18 @@ class RetrievalPipeline:
         stage_counts["fusion"] = len(fused)
 
         candidates = fused[: self.candidates_k]
+        # Captured unconditionally, before the reranker (if any) overwrites
+        # `candidates` below -- equals the final `candidates` list when no
+        # reranker is configured, simply because nothing reassigns it.
+        # `Candidate` is a mutable dataclass and the reranker mutates its
+        # candidates' `scores`/`ranks`/`stages` in place, so this must be a
+        # real snapshot (new objects, copied mutable fields) rather than a
+        # `list()` of the same references -- otherwise reranking would
+        # silently contaminate the "pre-rerank" pool too.
+        dense_candidates = [
+            replace(c, scores=dict(c.scores), ranks=dict(c.ranks), stages=list(c.stages))
+            for c in candidates
+        ]
 
         if self.reranker is not None:
             t0 = time.perf_counter()
@@ -170,6 +182,7 @@ class RetrievalPipeline:
             query=query,
             rewritten_queries=rewritten_queries,
             candidates=candidates[:k],
+            dense_candidates=dense_candidates,
             stage_timings=stage_timings,
             stage_counts=stage_counts,
         )

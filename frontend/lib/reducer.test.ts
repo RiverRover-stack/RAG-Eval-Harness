@@ -17,7 +17,7 @@ describe("askReducer", () => {
 
     const events: SSEEvent[] = [
       { event: "meta", data: { request_id: "r1", config_hash: "abc", k: 8 } },
-      { event: "retrieval", data: { candidates: [], timings: {} } },
+      { event: "retrieval", data: { candidates: [], dense_candidates: [], timings: {} } },
       { event: "token", data: { t: "FastAPI validates " } },
       { event: "token", data: { t: "request bodies " } },
       { event: "token", data: { t: "with Pydantic [1]." } },
@@ -97,5 +97,109 @@ describe("askReducer", () => {
     state = askReducer(state, { type: "SET_VERDICT", id: "t1", verdict: "good" });
 
     expect(state.verdicts.t1).toBe("good");
+  });
+
+  it("stores the retrieval event's candidates and dense_candidates on the turn", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "SUBMIT", id: "t1", question: "q" });
+    state = askReducer(state, {
+      type: "SSE",
+      id: "t1",
+      sseEvent: {
+        event: "retrieval",
+        data: {
+          candidates: [
+            {
+              chunk_id: "a",
+              url: "https://x/a",
+              title: "t",
+              source_type: "docs",
+              content: "content",
+              scores: { rerank: 0.9 },
+              ranks: { rerank: 1 },
+              stages: ["rerank"],
+              gold: true,
+            },
+          ],
+          dense_candidates: [
+            {
+              chunk_id: "a",
+              url: "https://x/a",
+              title: "t",
+              source_type: "docs",
+              content: "content",
+              scores: { rrf: 0.1 },
+              ranks: { fusion: 1 },
+              stages: ["fusion"],
+              gold: true,
+            },
+          ],
+          timings: {},
+        },
+      },
+    });
+
+    expect(state.turns[0].candidates).toHaveLength(1);
+    expect(state.turns[0].candidates[0].chunk_id).toBe("a");
+    expect(state.turns[0].denseCandidates[0].scores.rrf).toBe(0.1);
+  });
+
+  it("defaults view to chat and stage to 1 (Rerank 8)", () => {
+    expect(initialAskState.view).toBe("chat");
+    expect(initialAskState.stage).toBe(1);
+    expect(initialAskState.openRow).toBeNull();
+  });
+
+  it("SET_VIEW switches between chat and eval", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "SET_VIEW", view: "eval" });
+    expect(state.view).toBe("eval");
+    state = askReducer(state, { type: "SET_VIEW", view: "chat" });
+    expect(state.view).toBe("chat");
+  });
+
+  it("SET_STAGE updates the stage and closes any open row", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "OPEN_ROW", key: "t1:1" });
+    expect(state.openRow).toBe("t1:1");
+
+    state = askReducer(state, { type: "SET_STAGE", stage: 0 });
+    expect(state.stage).toBe(0);
+    expect(state.openRow).toBeNull();
+  });
+
+  it("TOGGLE_ROW opens a closed row and closes it again on a second toggle", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "TOGGLE_ROW", key: "t1:1" });
+    expect(state.openRow).toBe("t1:1");
+    state = askReducer(state, { type: "TOGGLE_ROW", key: "t1:1" });
+    expect(state.openRow).toBeNull();
+  });
+
+  it("TOGGLE_ROW switches to a different row rather than closing it, when another row is open", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "TOGGLE_ROW", key: "t1:1" });
+    state = askReducer(state, { type: "TOGGLE_ROW", key: "t1:2" });
+    expect(state.openRow).toBe("t1:2");
+  });
+
+  it("records reviewer verdicts separately from end-user verdicts", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "SUBMIT", id: "t1", question: "q" });
+    state = askReducer(state, { type: "SET_VERDICT", id: "t1", verdict: "good" });
+    state = askReducer(state, { type: "SET_REVIEWER_VERDICT", id: "t1", verdict: "wrong" });
+
+    expect(state.verdicts.t1).toBe("good");
+    expect(state.reviewerVerdicts.t1).toBe("wrong");
+  });
+
+  it("SET_ACTIVE moves the header's active question away from the newest turn", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "SUBMIT", id: "t1", question: "q1" });
+    state = askReducer(state, { type: "SUBMIT", id: "t2", question: "q2" });
+    expect(state.activeId).toBe("t2");
+
+    state = askReducer(state, { type: "SET_ACTIVE", id: "t1" });
+    expect(state.activeId).toBe("t1");
   });
 });

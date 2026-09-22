@@ -31,5 +31,10 @@ class RetrievalResult:
     query: str
     rewritten_queries: list[str] = field(default_factory=list)
     candidates: list[Candidate] = field(default_factory=list)
+    # Pre-rerank candidate pool (the post-fusion, pre-rerank slice) -- equals
+    # `candidates` when no reranker is configured. Exists so a trace/eval
+    # panel can show "dense candidates" as real data instead of re-deriving
+    # it from the already-reranked list.
+    dense_candidates: list[Candidate] = field(default_factory=list)
     stage_timings: dict[str, float] = field(default_factory=dict)
     stage_counts: dict[str, int] = field(default_factory=dict)

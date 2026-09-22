@@ -114,6 +114,28 @@ def log_feedback(
     return log_path
 
 
+def log_verdict(
+    *,
+    request_id: str,
+    verdict: str,
+    log_dir: Path = DEFAULT_LOG_DIR,
+    now: datetime | None = None,
+) -> Path:
+    """Append one JSON line to today's reviewer-verdict log (POST
+    /api/verdict), same append-only pattern as `log_feedback` -- creates the
+    directory and file as needed. Kept in its own log file, separate from
+    `log_feedback`'s end-user Yes/No, so the two audiences never merge.
+    Returns the log file path written to."""
+    now = now or datetime.now(UTC)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"verdict-{now:%Y-%m-%d}.jsonl"
+
+    row = {"request_id": request_id, "verdict": verdict, "timestamp": now.isoformat()}
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+    return log_path
+
+
 @dataclass(frozen=True)
 class Stats:
     request_count: int
