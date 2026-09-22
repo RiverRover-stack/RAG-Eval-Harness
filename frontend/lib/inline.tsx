@@ -4,6 +4,13 @@
 // to -- extract_citations() in rag/citations.py places the marker right
 // before the sentence's closing punctuation, so substituting in place
 // already puts the tile "at the end of the claim it supports".
+//
+// Also matches the fullwidth `【n】` form some providers (observed: Groq)
+// emit instead of the prompted `[n]` -- mirrors rag/citations.py's
+// `_CITATION_RE = r"[\[【](\d+)[\]】]"` exactly, so a citation that the
+// backend already extracts/scores correctly doesn't silently render as
+// inert bracket text here just because of which bracket glyph the model
+// used.
 
 import type { ReactNode } from "react";
 import { SourceTile } from "@/components/SourceTile";
@@ -27,7 +34,7 @@ export function renderAnswerInline(
   onCitationClick?: (chunkId: string) => void
 ): ReactNode[] {
   const byIndex = new Map(citations.map((c) => [c.index, c]));
-  return text.split(/(`[^`]+`|\[\d+\])/g).map((part, i) => {
+  return text.split(/(`[^`]+`|[\[【]\d+[\]】])/g).map((part, i) => {
     if (part.length > 1 && part.startsWith("`") && part.endsWith("`")) {
       return (
         <code key={i} className="font-mono text-[14px] text-accent-signal">
@@ -35,7 +42,7 @@ export function renderAnswerInline(
         </code>
       );
     }
-    const marker = /^\[(\d+)\]$/.exec(part);
+    const marker = /^[\[【](\d+)[\]】]$/.exec(part);
     if (marker) {
       const citation = byIndex.get(Number(marker[1]));
       // An unknown/unresolved index drops silently rather than leaking a
