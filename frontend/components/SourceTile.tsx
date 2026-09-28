@@ -5,25 +5,25 @@ import type { CitationOut } from "@/lib/types";
 // loaded eval item AND this chunk is in its resolved gold set (ask.py's
 // `_gold_chunk_ids`), never a generic brand accent.
 //
-// Clicking opens the evaluation panel on the matching chunk row (PR2) --
-// this used to open `citation.url` in a new tab (PR1 stopgap), replaced now
-// that the panel exists to "inspect the chunk" in place.
-export function SourceTile({ citation, onClick }: { citation: CitationOut; onClick?: () => void }) {
-  const title = citation.gold
-    ? "Ground-truth source — click to inspect the chunk"
-    : "Retrieved source — click to inspect the chunk";
+// Clicking opens the source URL in a new tab, like a normal citation link --
+// this used to open the evaluation panel on the matching chunk row (PR2),
+// replaced now that the panel is reachable via the header/FeedbackRow links
+// instead.
+export function SourceTile({ citation }: { citation: CitationOut }) {
+  const title = citation.gold ? "Ground-truth source — open source" : "Retrieved source — open source";
   const toneClasses = citation.gold
     ? "border-accent-gold text-accent-gold bg-[rgba(214,169,74,0.08)] hover:bg-[rgba(214,169,74,0.2)]"
     : "border-border text-accent-signal bg-surface hover:border-accent-signal";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <a
+      href={citation.url}
+      target="_blank"
+      rel="noopener noreferrer"
       title={title}
       className={`inline-flex align-[2px] ml-[6px] font-mono text-[10.5px] px-[7px] py-[2px] rounded-full border cursor-pointer transition-colors ${toneClasses}`}
     >
       {citation.path}
-    </button>
+    </a>
   );
 }

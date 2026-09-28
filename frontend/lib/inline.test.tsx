@@ -35,6 +35,11 @@ describe("renderAnswerInline", () => {
     expect(citationChunkIds(nodes)).toEqual(["c2"]);
   });
 
+  it("resolves dagger-annotated 【n†source】 markers to a SourceTile -- gpt-oss-120b emits this format", () => {
+    const nodes = renderAnswerInline("served concurrently 【2†source】.", [citation(2)]);
+    expect(citationChunkIds(nodes)).toEqual(["c2"]);
+  });
+
   it("resolves mixed ASCII and fullwidth markers in the same string", () => {
     const nodes = renderAnswerInline("first [1] then 【2】 then [3].", [citation(1), citation(2), citation(3)]);
     expect(citationChunkIds(nodes)).toEqual(["c1", "c2", "c3"]);

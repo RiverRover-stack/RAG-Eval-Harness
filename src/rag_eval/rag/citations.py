@@ -16,8 +16,11 @@ from rag_eval.retrieval.base import Candidate
 # Groq/Llama occasionally emits fullwidth brackets (U+3010/U+3011) instead
 # of the prompted ASCII `[n]` -- a model formatting quirk, not a rare edge
 # case, so both are treated as the same marker rather than dropping the
-# citation on the floor.
-_CITATION_RE = re.compile(r"[\[【](\d+)[\]】]")
+# citation on the floor. `openai/gpt-oss-120b` (also via Groq) emits a third,
+# "assistant-style" format instead -- a dagger `†` (U+2020) followed by the
+# literal word "source" between the digit and the closing bracket, e.g.
+# `【3†source】` -- so that optional annotation is matched and discarded too.
+_CITATION_RE = re.compile(r"[\[【](\d+)(?:†\w+)?[\]】]")
 # A "sentence" runs up to and including its terminal punctuation, or -- for
 # a trailing fragment with none, e.g. the INSUFFICIENT_CONTEXT sentinel --
 # to the end of the text.

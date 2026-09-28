@@ -23,7 +23,7 @@ describe("askReducer", () => {
       { event: "token", data: { t: "with Pydantic [1]." } },
       {
         event: "citation",
-        data: { index: 1, chunk_id: "a", url: "https://x/a", char_start: 0, char_end: 3 },
+        data: { index: 1, chunk_id: "a", url: "https://x/a", path: "a", gold: false, char_start: 0, char_end: 3 },
       },
       {
         event: "done",
@@ -41,9 +41,18 @@ describe("askReducer", () => {
       },
     ];
 
+    let state_afterCitation: typeof state | null = null;
     for (const sseEvent of events) {
       state = askReducer(state, { type: "SSE", id: "t1", sseEvent });
+      if (sseEvent.event === "citation") state_afterCitation = state;
     }
+
+    // Tile data is already present before `done` arrives, and the turn is
+    // still "streaming" at that point -- this is the whole point of the fix.
+    expect(state_afterCitation!.turns[0].citations).toEqual([
+      { index: 1, chunk_id: "a", url: "https://x/a", path: "a", gold: false },
+    ]);
+    expect(state_afterCitation!.turns[0].status).toBe("streaming");
 
     const turn = state.turns[0];
     expect(turn.requestId).toBe("r1");
@@ -53,6 +62,44 @@ describe("askReducer", () => {
       { index: 1, chunk_id: "a", url: "https://x/a", path: "a", gold: false },
     ]);
     expect(turn.abstained).toBe(false);
+  });
+
+  it("appends citation tile data as citation events stream in, without duplicating a repeated index", () => {
+    let state = initialAskState;
+    state = askReducer(state, { type: "SUBMIT", id: "t1", question: "q" });
+    state = askReducer(state, {
+      type: "SSE",
+      id: "t1",
+      sseEvent: {
+        event: "citation",
+        data: { index: 1, chunk_id: "a", url: "https://x/a", path: "a", gold: true, char_start: 0, char_end: 3 },
+      },
+    });
+    expect(state.turns[0].citations).toEqual([
+      { index: 1, chunk_id: "a", url: "https://x/a", path: "a", gold: true },
+    ]);
+
+    // Duplicate index -- should not produce a second entry.
+    state = askReducer(state, {
+      type: "SSE",
+      id: "t1",
+      sseEvent: {
+        event: "citation",
+        data: { index: 1, chunk_id: "a", url: "https://x/a", path: "a", gold: true, char_start: 0, char_end: 3 },
+      },
+    });
+    expect(state.turns[0].citations).toHaveLength(1);
+
+    // A different index -- should append.
+    state = askReducer(state, {
+      type: "SSE",
+      id: "t1",
+      sseEvent: {
+        event: "citation",
+        data: { index: 2, chunk_id: "b", url: "https://x/b", path: "b", gold: false, char_start: 4, char_end: 7 },
+      },
+    });
+    expect(state.turns[0].citations).toHaveLength(2);
   });
 
   it("marks streaming status and accumulates streamed text as tokens arrive", () => {

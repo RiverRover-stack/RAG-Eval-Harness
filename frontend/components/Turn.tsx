@@ -9,7 +9,6 @@ export function TurnView({
   verdict,
   onVerdict,
   isLast,
-  onCitationClick,
   showEvalLink,
   onShowEvaluation,
 }: {
@@ -17,7 +16,6 @@ export function TurnView({
   verdict: "good" | "bad" | undefined;
   onVerdict: (v: "good" | "bad") => void;
   isLast: boolean;
-  onCitationClick: (chunkId: string) => void;
   showEvalLink: boolean;
   onShowEvaluation: () => void;
 }) {
@@ -35,7 +33,6 @@ export function TurnView({
           <AnswerBody
             answer={turn.status === "streaming" ? turn.streamedText : turn.answer}
             citations={turn.citations}
-            onCitationClick={onCitationClick}
           />
           {turn.status === "done" && (
             <FeedbackRow

@@ -55,7 +55,7 @@ export type SSEEvent =
   | { event: "token"; data: { t: string } }
   | {
       event: "citation";
-      data: { index: number; chunk_id: string; url: string; char_start: number; char_end: number };
+      data: CitationOut & { char_start: number; char_end: number };
     }
   | { event: "done"; data: DonePayload }
   | { event: "error"; data: { detail: string } };

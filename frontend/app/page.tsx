@@ -65,19 +65,9 @@ export default function Home() {
     });
   }
 
-  function openEvalForCitation(turnId: string, chunkId: string) {
-    dispatch({ type: "SET_ACTIVE", id: turnId });
-    dispatch({ type: "SET_VIEW", view: "eval" });
-    dispatch({ type: "SET_STAGE", stage: 1 }); // Rerank 8, also clears openRow
-    const turn = state.turns.find((t) => t.id === turnId);
-    const rank = turn?.candidates.findIndex((c) => c.chunk_id === chunkId) ?? -1;
-    if (rank >= 0) dispatch({ type: "OPEN_ROW", key: `${turnId}:${rank + 1}` });
-  }
-
   // The gate indicator (and, once built, latency) in the header always
-  // describes the *active* question, not the newest one -- source-tile
-  // clicks and Yes/No feedback can both move activeId away from the latest
-  // turn (see openEvalForCitation/submitFeedback above).
+  // describes the *active* question, not the newest one -- Yes/No feedback
+  // can move activeId away from the latest turn (see submitFeedback above).
   const activeTurn = state.turns.find((t) => t.id === state.activeId);
   const gatePassed = activeTurn?.status === "done" && activeTurn.abstained === false;
   const remainingSuggestions = suggestions.filter((q) => !askedRef.current.has(q));
@@ -104,7 +94,6 @@ export default function Home() {
                 verdict={state.verdicts[turn.id]}
                 onVerdict={(v) => submitFeedback(turn.id, turn.requestId, v)}
                 isLast={i === state.turns.length - 1}
-                onCitationClick={(chunkId) => openEvalForCitation(turn.id, chunkId)}
                 showEvalLink={!panelOpen}
                 onShowEvaluation={() => {
                   dispatch({ type: "SET_ACTIVE", id: turn.id });

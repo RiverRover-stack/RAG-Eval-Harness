@@ -78,10 +78,28 @@ export function askReducer(state: AskState, action: AskAction): AskState {
             denseCandidates: sseEvent.data.dense_candidates,
           }));
         case "citation":
-          // Mid-stream citation offsets -- superseded by `done.citations`,
-          // which is what AnswerBody actually renders from. Still out of
-          // scope for state.
-          return state;
+          // Live tile data, so tiles render as the answer streams in rather
+          // than waiting on `done` (which doesn't fire until score_answer()
+          // finishes). Guards against a duplicate index in case the scanner
+          // ever double-reports one; `done.citations` still fully replaces
+          // this list once it arrives.
+          return updateTurn(state, action.id, (t) =>
+            t.citations.some((c) => c.index === sseEvent.data.index)
+              ? t
+              : {
+                  ...t,
+                  citations: [
+                    ...t.citations,
+                    {
+                      index: sseEvent.data.index,
+                      chunk_id: sseEvent.data.chunk_id,
+                      url: sseEvent.data.url,
+                      path: sseEvent.data.path,
+                      gold: sseEvent.data.gold,
+                    },
+                  ],
+                }
+          );
         case "token":
           return updateTurn(state, action.id, (t) => ({
             ...t,

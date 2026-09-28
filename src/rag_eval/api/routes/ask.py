@@ -7,7 +7,7 @@ thing at once. /api/ask/stream emits the same shape incrementally:
     event: meta       {request_id, config_hash, k}
     event: retrieval  {candidates:[...], timings:{...}}
     event: token      {"t": "FastAPI "}
-    event: citation   {index, chunk_id, url, char_start, char_end}
+    event: citation   {index, chunk_id, url, path, gold, char_start, char_end}
     event: done        (same shape /api/ask returns)
     event: error       {detail}
 
@@ -205,6 +205,11 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
         # evaluation panel's chunk list, which renders off the `retrieval`
         # event alone, well before the answer finishes generating.
         gold_chunk_ids = _gold_chunk_ids(req.question, state)
+        # Also needed here (not just down by `done`) so the `citation` SSE
+        # event emitted below can carry the same path/gold fields as
+        # `done.citations` -- tiles render live off `citation` now, not just
+        # off `done`.
+        candidates_by_id = {c.chunk_id: c for c in result.candidates}
 
         yield _sse(
             "retrieval",
@@ -237,9 +242,7 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
                         yield _sse(
                             "citation",
                             {
-                                "index": citation.index,
-                                "chunk_id": citation.chunk_id,
-                                "url": citation.url,
+                                **_citation_payload(citation, candidates_by_id, gold_chunk_ids),
                                 "char_start": citation.char_start,
                                 "char_end": citation.char_end,
                             },
@@ -266,7 +269,6 @@ async def _ask_stream_events(req: AskRequest, state: AppState) -> AsyncIterator[
     )
     log_request(usage, request_id=request_id, endpoint="/api/ask/stream", abstained=abstained)
 
-    candidates_by_id = {c.chunk_id: c for c in result.candidates}
     yield _sse(
         "done",
         {

@@ -44,6 +44,26 @@ def test_extract_citations_handles_fullwidth_brackets():
     assert citations[0].chunk_id == "a"
 
 
+def test_extract_citations_handles_dagger_annotated_markers():
+    # openai/gpt-oss-120b (via Groq) emits this "assistant-style" format:
+    # a fullwidth-bracketed digit, a dagger, and the literal word "source".
+    answer = "FastAPI is fast 【1†source】."
+    citations = extract_citations(answer, CANDIDATES)
+
+    assert len(citations) == 1
+    assert citations[0].index == 1
+    assert citations[0].chunk_id == "a"
+
+
+def test_extract_citations_handles_ascii_dagger_annotated_markers():
+    answer = "FastAPI is fast [1†source]."
+    citations = extract_citations(answer, CANDIDATES)
+
+    assert len(citations) == 1
+    assert citations[0].index == 1
+    assert citations[0].chunk_id == "a"
+
+
 def test_validate_citations_reports_unknown_indices():
     answer = "Known [1]. Unknown [7]."
     report = validate_citations(answer, CANDIDATES)
@@ -119,6 +139,16 @@ def test_streaming_scanner_reassembles_a_fullwidth_marker_split_across_feeds():
 
     assert scanner.feed("FastAPI is fast 【") == []
     citations = scanner.feed("1】.")
+
+    assert [c.index for c in citations] == [1]
+    assert [c.chunk_id for c in citations] == ["a"]
+
+
+def test_streaming_scanner_reassembles_a_dagger_annotated_marker_split_across_feeds():
+    scanner = StreamingCitationScanner(CANDIDATES)
+
+    assert scanner.feed("FastAPI is fast 【1†sou") == []
+    citations = scanner.feed("rce】.")
 
     assert [c.index for c in citations] == [1]
     assert [c.chunk_id for c in citations] == ["a"]
