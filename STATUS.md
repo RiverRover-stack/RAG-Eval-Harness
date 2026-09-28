@@ -189,6 +189,46 @@
   prefix/length before and after); `.env.example` was already unquoted, so
   no repo change needed. Not a code bug, nothing to commit.
 
+- **2026-09-28 — PR built on `fix/live-citation-tiles`** (off `main`, which
+  now includes the deployed frontend from PR #55): three fixes to the live
+  console's citation handling, reported by you after testing the deployed
+  app.
+  1. Citation tiles were appearing only after the *next* question was
+     asked, not while the answer streamed in. `ask.py`'s SSE `citation`
+     event already fired live (via `StreamingCitationScanner`), but
+     `frontend/lib/reducer.ts`'s `case "citation"` discarded it, so tiles
+     only ever rendered off the final `done` event — which doesn't arrive
+     until `score_answer()` finishes re-embedding every chunk/sentence.
+     Fixed: the `citation` event now also carries `path`/`gold` (via the
+     existing `_citation_payload()` helper, no new logic), and the reducer
+     appends each one to `turn.citations` immediately, deduped by index;
+     `done.citations` still fully replaces the list once it lands.
+  2. Clicking a tile opened the "Answer + evaluation" panel and highlighted
+     the matching chunk (deliberate PR2 behavior) — you asked for it to
+     open the real source URL instead. `SourceTile` is now a plain
+     `<a href={citation.url} target="_blank" rel="noopener noreferrer">`.
+     The panel is still reachable via the header switch and
+     `FeedbackRow`'s "Show evaluation" link — neither touched.
+  3. **Bug found during your manual test, not in the original report**:
+     screenshot showed `【3†source】` rendered as inert literal text.
+     `openai/gpt-oss-120b` (via Groq) emits a third citation format — a
+     dagger (`†`) + the word "source" between the digit and the closing
+     bracket — that neither `_CITATION_RE` in `rag/citations.py` nor its
+     frontend mirror in `lib/inline.tsx` recognized, so the marker was
+     silently dropped: no `Citation` extracted, no SSE event, not counted
+     in `validate_citations()`'s coverage score. Broadened both regexes to
+     `r"[\[【](\d+)(?:†\w+)?[\]】]"`. Verified no bleed-through between
+     adjacent markers and Python/JS regex parity by hand in both engines.
+  `make lint type test` — 359 passed (up from 356), ruff/mypy clean.
+  Frontend `lint`/`tsc --noEmit`/`test` (31 passed, up from 30)/`build` all
+  clean. Two reviewer subagent passes (one per fix batch): both **ship,
+  risk low**, no blocking findings — one informational note only (Python's
+  `\w` is Unicode-aware, JS's isn't; identical behavior for the one format
+  actually observed, so left as-is per this project's surgical-change
+  rule). Committed (`f68549b`), pushed, PR opened:
+  https://github.com/RiverRover-stack/RAG-Eval-Harness/pull/56 -- open,
+  awaiting CI + your merge.
+
 ## Needs your call
 - **Docs system update** (reviewer finding from PR1, not a code defect):
   your standing instruction is to update

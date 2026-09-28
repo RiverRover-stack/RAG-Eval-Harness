@@ -107,6 +107,10 @@ def test_ask_stream_event_order_and_final_citations(fake_embedder):
     assert all(name in {"meta", "retrieval", "token", "citation", "done"} for name in names)
     assert names.count("token") == 3  # one per delta fed to the LLM
 
+    citation_payload = json.loads(next(data for name, data in events if name == "citation"))
+    assert citation_payload["path"] == "a"
+    assert citation_payload["gold"] is False
+
     done = json.loads(events[-1][1])
     assert done["answer"] == "FastAPI validates request bodies with Pydantic [1]."
     assert done["citations"] == [
@@ -178,6 +182,37 @@ def test_ask_stream_retrieval_event_marks_dense_and_reranked_candidates_gold(fak
     assert [c["chunk_id"] for c in retrieval_payload["dense_candidates"]] == ["a", "b"]
     assert retrieval_payload["dense_candidates"][0]["gold"] is True
     assert retrieval_payload["dense_candidates"][1]["gold"] is False
+
+
+def test_ask_stream_citation_event_matches_done_citations_path_and_gold(fake_embedder):
+    import json
+
+    from rag_eval.eval.gold import EvalItem
+
+    candidates = [_candidate("a", "content", "https://x/a")]
+    pipeline = FakeStreamPipeline(candidates)
+    llm = FakeStreamLLM(["cited answer [1]."])
+    item = EvalItem(id="1", dataset="docs_synth_v1", question="q", gold_chunk_ids=["a"])
+    app.dependency_overrides[get_app_state] = lambda: AppState(
+        cfg=RunConfig(name="test"),
+        pipeline=pipeline,
+        llm=llm,
+        embedder=fake_embedder,
+        prompt=PROMPTS["v2-cited"],
+        eval_items_by_question={"q": item},
+    )
+    try:
+        resp = client.post("/api/ask/stream", json={"question": "q"})
+    finally:
+        app.dependency_overrides.clear()
+
+    events = _parse_sse(resp.text)
+    citation_payload = json.loads(next(data for name, data in events if name == "citation"))
+    done = json.loads(next(data for name, data in events if name == "done"))
+    done_citation = next(c for c in done["citations"] if c["chunk_id"] == citation_payload["chunk_id"])
+
+    assert citation_payload["path"] == done_citation["path"]
+    assert citation_payload["gold"] == done_citation["gold"] is True
 
 
 def test_ask_stream_insufficient_context_reports_abstained(fake_embedder):
