@@ -225,8 +225,9 @@
   risk low**, no blocking findings — one informational note only (Python's
   `\w` is Unicode-aware, JS's isn't; identical behavior for the one format
   actually observed, so left as-is per this project's surgical-change
-  rule). Not committed/pushed yet — this entry logs the work; commit/PR
-  follow once you've seen the diff.
+  rule). Committed (`f68549b`), pushed, PR opened:
+  https://github.com/RiverRover-stack/RAG-Eval-Harness/pull/56 -- open,
+  awaiting CI + your merge.
 
 ## Needs your call
 - **Docs system update** (reviewer finding from PR1, not a code defect):
