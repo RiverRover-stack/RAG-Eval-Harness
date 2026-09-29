@@ -229,6 +229,28 @@
   https://github.com/RiverRover-stack/RAG-Eval-Harness/pull/56 -- open,
   awaiting CI + your merge.
 
+- **2026-09-29 — PR C (markdown rendering) built on `feat/markdown-answers`**
+  (off `main` after #56 merged): `AnswerBody` now renders answers via
+  `react-markdown` + `remark-gfm` (no `rehype-raw`, so model HTML stays
+  escaped), replacing the hand-rolled `lib/parseAnswer.ts` (deleted, no
+  other users). Citation markers inside any text-bearing element go
+  through `withCitations()` -> `renderAnswerInline()`; fenced code keeps
+  `highlightCode` via a `pre` override, so `[1]` in code stays literal.
+  Reviewer verdict **ship after fixes**, risk low-medium; both real
+  findings fixed: the `components` map is now `useMemo`'d (a fresh map per
+  streamed token would remount the whole answer and its tiles), and
+  `<img>` is disallowed (untrusted Discussions text could make the model
+  emit an image URL the browser fetches with no click). Footnote-link
+  `target=_blank` nit left as-is (unlikely from an LLM answer). Frontend
+  `lint`/`tsc`/`test` (39 passed)/`build` clean; backend untouched.
+  Caveats: the remount fix is reasoned from React's reconciliation rules,
+  not browser-verified (no jsdom in this repo) -- worth eyeballing a
+  streaming answer once. Page bundle grew 5.5 kB -> 49.1 kB. `npm audit`'s
+  7 vulnerabilities (vitest/vite/postcss/next) all pre-exist on `main`;
+  none come from the new packages. Committed (`8a2d8a7`), pushed, PR
+  opened: https://github.com/RiverRover-stack/RAG-Eval-Harness/pull/57 --
+  open, awaiting CI + your merge.
+
 ## Needs your call
 - **Docs system update** (reviewer finding from PR1, not a code defect):
   your standing instruction is to update
