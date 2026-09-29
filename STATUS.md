@@ -247,7 +247,9 @@
   not browser-verified (no jsdom in this repo) -- worth eyeballing a
   streaming answer once. Page bundle grew 5.5 kB -> 49.1 kB. `npm audit`'s
   7 vulnerabilities (vitest/vite/postcss/next) all pre-exist on `main`;
-  none come from the new packages.
+  none come from the new packages. Committed (`8a2d8a7`), pushed, PR
+  opened: https://github.com/RiverRover-stack/RAG-Eval-Harness/pull/57 --
+  open, awaiting CI + your merge.
 
 ## Needs your call
 - **Docs system update** (reviewer finding from PR1, not a code defect):
