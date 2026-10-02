@@ -29,8 +29,9 @@ report the correlation between the judge's `citation_accuracy` and the
 deterministic one.
 
 ```bash
-# needs GROQ_API_KEY + GEMINI_API_KEY, and a local Ollama for fdm-llama +
-# the RAGAS judge embeddings (nomic-embed-text).
+# needs GROQ_API_KEY + GEMINI_API_KEY, and a local Ollama running fdm-llama
+# (see Modelfile.fdm-llama at the repo root -- ollama create fdm-llama -f
+# Modelfile.fdm-llama) + the RAGAS judge embeddings (nomic-embed-text).
 rag-eval eval run --config configs/experiments/gen_hybrid_ollama.yaml
 rag-eval eval run --config configs/experiments/gen_hybrid_groq.yaml
 
